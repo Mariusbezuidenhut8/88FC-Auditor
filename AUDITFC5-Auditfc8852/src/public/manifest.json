@@ -1,0 +1,21 @@
+{
+  "name": "Fairbairn Compliance Audit Tool",
+  "short_name": "FC Audit",
+  "description": "Azure AI-Powered Compliance Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#005f6b",
+  "icons": [
+    {
+      "src": "https://i.ibb.co/mCZqZ7fn/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://i.ibb.co/Rpg4nfvn/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
