@@ -1,5 +1,16 @@
+[build]
+  command = "vite build"
+  publish = "dist"
+  functions = "netlify/functions"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
+  status = 200
+
+# Required for React SPA - prevents 404 on page refresh
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
   status = 200
 
