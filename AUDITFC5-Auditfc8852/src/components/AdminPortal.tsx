@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { AccessCode, ComplianceReport } from "../types";
 
 interface AdminPortalProps {
@@ -7,6 +7,7 @@ interface AdminPortalProps {
   onGenerateCode: (label: string, isPermanent?: boolean) => void;
   onRevokeCode: (id: string) => void;
   onBack: () => void;
+  onImportData: (reports: ComplianceReport[], codes: AccessCode[]) => void;
 }
 
 const AdminPortal: React.FC<AdminPortalProps> = ({
@@ -15,10 +16,49 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   onGenerateCode,
   onRevokeCode,
   onBack,
+  onImportData,
 }) => {
   const [newCodeLabel, setNewCodeLabel] = useState("");
   const [isPermanent, setIsPermanent] = useState(false);
-  const [activeTab, setActiveTab] = useState<"codes" | "reports">("codes");
+  const [activeTab, setActiveTab] = useState<"codes" | "reports" | "data">("codes");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      version: 1,
+      reports,
+      accessCodes,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `fairbairn-audit-backup-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target?.result as string);
+        if (!Array.isArray(parsed.reports) || !Array.isArray(parsed.accessCodes)) {
+          alert("Invalid backup file format.");
+          return;
+        }
+        if (!window.confirm(`This will replace all current data with:\n• ${parsed.reports.length} reports\n• ${parsed.accessCodes.length} access codes\n\nContinue?`)) return;
+        onImportData(parsed.reports, parsed.accessCodes);
+      } catch {
+        alert("Could not read file. Make sure it is a valid Fairbairn backup (.json).");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
   const handleGenerateCode = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +122,16 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
             }`}
           >
             All Reports ({reports.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("data")}
+            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+              activeTab === "data"
+                ? "border-[#005f6b] text-[#005f6b]"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Backup & Restore
           </button>
         </div>
       </div>
@@ -218,6 +268,56 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Backup & Restore Tab */}
+      {activeTab === "data" && (
+        <div className="space-y-6">
+          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+
+          {/* Export */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Export Backup</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Download all reports and access codes as a <strong>.json</strong> file. Save this file somewhere safe — you can use it to restore your data on any device or after a redeployment.
+            </p>
+            <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+              <div className="flex-1 text-sm text-slate-600 space-y-1">
+                <p><span className="font-bold text-slate-800">{reports.length}</span> audit reports</p>
+                <p><span className="font-bold text-slate-800">{accessCodes.length}</span> access codes</p>
+              </div>
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#005f6b] text-white font-bold rounded-xl hover:bg-[#004b54] transition-colors text-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Download Backup
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Tip: export a backup before every Netlify redeployment to avoid losing data.
+            </p>
+          </div>
+
+          {/* Import */}
+          <div className="bg-white rounded-2xl shadow-sm border border-amber-200 p-6">
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Restore from Backup</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Upload a previously exported <strong>.json</strong> backup file to restore all reports and access codes. <span className="text-amber-600 font-semibold">This will replace all current data.</span>
+            </p>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 transition-colors text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+              Upload Backup File
+            </button>
+          </div>
         </div>
       )}
 

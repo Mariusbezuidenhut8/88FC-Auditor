@@ -457,23 +457,12 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
                             {/* Action buttons – hidden from PDF */}
                             <div className="flex gap-2 mt-3 print:hidden">
                               {action.status === 'PENDING' && (
-                                <>
-                                  <button
-                                    onClick={() => handleUpdateActionStatus(action.id, 'RESOLVED')}
-                                    className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors uppercase tracking-wider"
-                                  >
-                                    Mark Resolved
-                                  </button>
-                                  <button
-                                    onClick={() => handleStartEditAction(action)}
-                                    className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors uppercase tracking-wider flex items-center gap-1"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                                    </svg>
-                                    Edit
-                                  </button>
-                                </>
+                                <button
+                                  onClick={() => handleUpdateActionStatus(action.id, 'RESOLVED')}
+                                  className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors uppercase tracking-wider"
+                                >
+                                  Mark Resolved
+                                </button>
                               )}
                               {action.status === 'RESOLVED' && (
                                 <button
@@ -483,6 +472,15 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
                                   Reopen
                                 </button>
                               )}
+                              <button
+                                onClick={() => handleStartEditAction(action)}
+                                className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors uppercase tracking-wider flex items-center gap-1"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Edit
+                              </button>
                             </div>
                           </>
                         )}

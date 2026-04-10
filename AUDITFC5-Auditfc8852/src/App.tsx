@@ -536,6 +536,13 @@ const App: React.FC = () => {
             onGenerateCode={handleGenerateCode}
             onRevokeCode={handleRevokeCode}
             onBack={() => setView("history")}
+            onImportData={(importedReports, importedCodes) => {
+              setReports(importedReports);
+              setAccessCodes(importedCodes);
+              localStorage.setItem("audit_reports", JSON.stringify(importedReports));
+              localStorage.setItem("access_codes", JSON.stringify(importedCodes));
+              alert(`Import successful: ${importedReports.length} reports and ${importedCodes.length} access codes restored.`);
+            }}
           />
         )}
 
