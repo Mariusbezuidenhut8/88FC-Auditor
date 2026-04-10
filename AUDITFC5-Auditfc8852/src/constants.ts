@@ -97,7 +97,7 @@ export const CHECKLIST_ITEMS: ChecklistItem[] = [
 ];
 
 // Admin gate (note: for production, move this to backend)
-export const ADMIN_PASSWORD = "FC-ADMIN-2025";
+export const ADMIN_PASSWORD = "88Wealth-88-26";
 
 export const THEME_COLORS = {
   primary: "#005f6b",

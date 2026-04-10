@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CARAnalysis, CARIssue } from "../types";
-import { evaluateCAR } from "../azureOpenAIService";
+import { evaluateCAR, extractCARDetailsFromImages } from "../azureOpenAIService";
 import html2pdf from "html2pdf.js";
-
 
 // PDF.js
 import * as pdfjsLib from "pdfjs-dist";
@@ -24,6 +23,9 @@ interface CARMeta {
 
 type Step = "input" | "analyzing" | "results" | "history";
 
+type UploadedImage = { base64: string; mimeType: string; fileName: string };
+type FileEntry = { name: string; status: "done" | "error"; isImage: boolean };
+
 const severityConfig: Record<
   "HIGH" | "MEDIUM" | "LOW",
   { color: string; bg: string; border: string; label: string }
@@ -33,49 +35,11 @@ const severityConfig: Record<
   LOW: { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", label: "LOW RISK" },
 };
 
-function safeFilePart(s: string) {
-  return (s || "")
-    .trim()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-zA-Z0-9_\-]+/g, "")
-    .slice(0, 60);
-}
-
-/** Extract first JSON object from messy model output */
-function extractJsonObject(text: string) {
-  const cleaned = (text || "")
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .trim();
-
-  // direct parse
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    // find first balanced {...}
-    const start = cleaned.indexOf("{");
-    if (start === -1) throw new Error("No JSON object start '{' found");
-
-    let depth = 0;
-    let end = -1;
-    for (let i = start; i < cleaned.length; i++) {
-      const ch = cleaned[i];
-      if (ch === "{") depth++;
-      if (ch === "}") depth--;
-      if (depth === 0) {
-        end = i;
-        break;
-      }
-    }
-    if (end === -1) throw new Error("No complete JSON object found");
-    return JSON.parse(cleaned.slice(start, end + 1));
-  }
-}
+// ── Utilities ────────────────────────────────────────────────
 
 async function extractTextFromPdf(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   const pdf = await (pdfjsLib as any).getDocument({ data: buffer }).promise;
-
   let fullText = "";
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
@@ -83,9 +47,77 @@ async function extractTextFromPdf(file: File): Promise<string> {
     const strings = content.items.map((it: any) => it.str);
     fullText += strings.join(" ") + "\n";
   }
-
   return fullText.trim();
 }
+
+async function renderPdfToImages(file: File): Promise<Array<{ base64: string; mimeType: string }>> {
+  const buffer = await file.arrayBuffer();
+  const pdf = await (pdfjsLib as any).getDocument({ data: buffer }).promise;
+  const maxPages = Math.min(pdf.numPages, 5);
+  const images: Array<{ base64: string; mimeType: string }> = [];
+  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    // Scale 1.0 keeps file sizes small enough for the API
+    const viewport = page.getViewport({ scale: 1.0 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+    images.push({
+      base64: canvas.toDataURL("image/jpeg", 0.7).split(",")[1],
+      mimeType: "image/jpeg",
+    });
+  }
+  return images;
+}
+
+async function fileToBase64AndCompress(file: File): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const orig64 = dataUrl.split(",")[1];
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1200;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve({
+          base64: canvas.toDataURL("image/jpeg", 0.8).split(",")[1],
+          mimeType: "image/jpeg",
+        });
+      };
+      img.onerror = () => resolve({ base64: orig64, mimeType: file.type });
+      img.src = dataUrl;
+    };
+    reader.onerror = () => resolve({ base64: "", mimeType: file.type });
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Extract first JSON object from messy model output */
+function extractJsonObject(text: string) {
+  const cleaned = (text || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    if (start === -1) throw new Error("No JSON object start '{' found");
+    let depth = 0, end = -1;
+    for (let i = start; i < cleaned.length; i++) {
+      if (cleaned[i] === "{") depth++;
+      if (cleaned[i] === "}") depth--;
+      if (depth === 0) { end = i; break; }
+    }
+    if (end === -1) throw new Error("No complete JSON object found");
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 
 const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, activeCodeId }) => {
   const [step, setStep] = useState<Step>("input");
@@ -110,6 +142,10 @@ const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, activeCodeId }) => {
   const [expandedIssue, setExpandedIssue] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
+
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [fileList, setFileList] = useState<FileEntry[]>([]);
+  const [uploadStatus, setUploadStatus] = useState<string>("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -137,13 +173,11 @@ const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, activeCodeId }) => {
     localStorage.setItem("car_analyses", JSON.stringify(updated));
   };
 
-  // ── Auto-extract details from text ───────────────────────────
+  // ── Auto-extract from text ────────────────────────────────────
   const autoExtract = async (text: string) => {
-    if (text.trim().length < 120) return; // avoid weak docs
-
+    if (text.trim().length < 120) return;
     setIsExtracting(true);
     setError(null);
-
     try {
       const response = await fetch("/.netlify/functions/azure-openai", {
         method: "POST",
@@ -179,13 +213,8 @@ Return ONLY this JSON:
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Extract call failed: ${response.status} ${response.statusText}`);
-      }
-
+      if (!response.ok) throw new Error(`Extract call failed: ${response.status}`);
       const data = await response.json();
-
-      // Be tolerant to different Netlify function response shapes:
       const content =
         data?.choices?.[0]?.message?.content ??
         data?.message?.content ??
@@ -193,22 +222,13 @@ Return ONLY this JSON:
         data?.result ??
         data?.text ??
         "";
-
-      if (!content) {
-        console.log("AutoExtract: unexpected response shape", data);
-        throw new Error("No model content returned from server");
-      }
+      if (!content) throw new Error("No model content returned");
 
       const extracted = extractJsonObject(content);
-
-      // Only fill missing fields (don’t overwrite user’s manual inputs with blanks)
-      if (typeof extracted.representativeName === "string" && extracted.representativeName.trim()) {
+      if (extracted.representativeName?.trim())
         setRepName((prev) => (prev.trim() ? prev : extracted.representativeName.trim()));
-      }
-      if (typeof extracted.clientName === "string" && extracted.clientName.trim()) {
+      if (extracted.clientName?.trim())
         setClientName((prev) => (prev.trim() ? prev : extracted.clientName.trim()));
-      }
-
       setMeta((prev) => ({
         caseNumber: (extracted.caseNumber || "").trim() || prev.caseNumber,
         productType: (extracted.productType || "").trim() || prev.productType,
@@ -224,58 +244,111 @@ Return ONLY this JSON:
     }
   };
 
-  // Debounce extraction on carText changes
+  // ── Auto-extract from images (Vision) ────────────────────────
+  const autoExtractFromImages = async (imgs: UploadedImage[]) => {
+    if (imgs.length === 0) return;
+    setIsExtracting(true);
+    setError(null);
+    try {
+      const extracted = await extractCARDetailsFromImages(
+        imgs.map(({ base64, mimeType }) => ({ base64, mimeType }))
+      );
+      if (extracted.representativeName?.trim())
+        setRepName((prev) => (prev.trim() ? prev : extracted.representativeName!.trim()));
+      if (extracted.clientName?.trim())
+        setClientName((prev) => (prev.trim() ? prev : extracted.clientName!.trim()));
+      setMeta((prev) => ({
+        caseNumber: extracted.caseNumber?.trim() || prev.caseNumber,
+        productType: extracted.productType?.trim() || prev.productType,
+        policyNumber: extracted.policyNumber?.trim() || prev.policyNumber,
+        insurerName: extracted.insurerName?.trim() || prev.insurerName,
+        adviceDate: extracted.adviceDate?.trim() || prev.adviceDate,
+      }));
+    } catch (e) {
+      console.error("Image auto-extract failed:", e);
+      setError("Could not auto-extract details from images. Please enter them manually.");
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  // Debounce extraction on paste text changes
   useEffect(() => {
     if (step !== "input") return;
     if (carText.trim().length < 120) return;
-
-    const t = window.setTimeout(() => {
-      autoExtract(carText);
-    }, 900);
-
+    const t = window.setTimeout(() => { autoExtract(carText); }, 900);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carText, step]);
 
   // ── File upload ──────────────────────────────────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files: File[] = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setError(null);
+    setIsExtracting(true);
+    setUploadStatus("Reading file…");
 
-    // TXT
-    if (file.type === "text/plain") {
-      const text = await file.text();
-      setCarText(text);
-      return;
-    }
+    const newImages: UploadedImage[] = [];
+    let newText = "";
+    const processed: FileEntry[] = [];
 
-    // PDF (REAL extraction)
-    if (file.type === "application/pdf") {
-      setIsExtracting(true);
-      try {
-        const text = await extractTextFromPdf(file);
-        setCarText(text);
-      } catch (err) {
-        console.error(err);
-        setError("Could not extract text from PDF (maybe scanned). Please paste the CAR text instead.");
-        setCarText("");
-      } finally {
-        setIsExtracting(false);
+    try {
+      for (const file of files) {
+        try {
+          if (file.type === "text/plain") {
+            setUploadStatus(`Extracting text from ${file.name}…`);
+            const text = await file.text();
+            newText += (newText ? "\n\n" : "") + text;
+            processed.push({ name: file.name, status: "done", isImage: false });
+          } else if (file.type === "application/pdf") {
+            setUploadStatus(`Extracting text from ${file.name}…`);
+            const text = await extractTextFromPdf(file);
+            if (text.trim().length >= 200) {
+              newText += (newText ? "\n\n" : "") + text;
+              processed.push({ name: file.name, status: "done", isImage: false });
+            } else {
+              // Scanned PDF — render pages as images for Vision AI
+              setUploadStatus(`Rendering scanned pages from ${file.name}…`);
+              const imgs = await renderPdfToImages(file);
+              imgs.forEach((img) => newImages.push({ ...img, fileName: file.name }));
+              processed.push({ name: file.name, status: "done", isImage: true });
+            }
+          } else if (file.type.startsWith("image/")) {
+            setUploadStatus(`Processing image ${file.name}…`);
+            const { base64, mimeType } = await fileToBase64AndCompress(file);
+            newImages.push({ base64, mimeType, fileName: file.name });
+            processed.push({ name: file.name, status: "done", isImage: true });
+          } else {
+            processed.push({ name: file.name, status: "error", isImage: false });
+          }
+        } catch (err) {
+          console.error(`Failed to process ${file.name}:`, err);
+          processed.push({ name: file.name, status: "error", isImage: false });
+        }
       }
-      return;
-    }
 
-    // Images (no OCR here)
-    if (file.type.startsWith("image/")) {
-      setCarText(
-        `[Image uploaded: ${file.name}]\n\nThis tool does not OCR images. Please copy/paste the CAR text for best results.`
-      );
-      return;
-    }
+      // Append to any previously uploaded content
+      if (newText.trim()) setCarText((prev: string) => prev ? prev + "\n\n" + newText.trim() : newText.trim());
+      setUploadedImages((prev: UploadedImage[]) => [...prev, ...newImages]);
+      setFileList((prev: FileEntry[]) => [...prev, ...processed]);
 
-    setCarText(`[File uploaded: ${file.name}]\n\nPlease copy/paste the text content of your CAR document.`);
+      if (newImages.length > 0) {
+        setUploadStatus("Sending to Vision AI to read document…");
+        await autoExtractFromImages(newImages);
+      } else {
+        setIsExtracting(false);
+        // carText debounce will trigger text-based autoExtract
+      }
+    } catch (err) {
+      console.error("Upload failed:", err);
+      setError("Upload failed. Please try again.");
+      setIsExtracting(false);
+    } finally {
+      setUploadStatus("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   // ── Analyze gating ───────────────────────────────────────────
@@ -289,14 +362,15 @@ Return ONLY this JSON:
   }, [meta]);
 
   const canAnalyze = useMemo(() => {
+    const hasContent = carText.trim().length > 0 || uploadedImages.length > 0;
     return (
-      carText.trim().length > 0 &&
+      hasContent &&
       repName.trim().length > 0 &&
       clientName.trim().length > 0 &&
       !isExtracting &&
       hasSomeMeta
     );
-  }, [carText, repName, clientName, isExtracting, hasSomeMeta]);
+  }, [carText, repName, clientName, isExtracting, hasSomeMeta, uploadedImages]);
 
   // ── Submit for analysis ───────────────────────────────────────
   const handleAnalyze = async () => {
@@ -304,24 +378,25 @@ Return ONLY this JSON:
       setError("Please complete the required info and wait for extraction to finish.");
       return;
     }
-
     setError(null);
     setStep("analyzing");
-
     try {
-      const result = await evaluateCAR(carText, repName, clientName, meta);
-
+      const result = await evaluateCAR(
+        carText,
+        repName,
+        clientName,
+        meta,
+        uploadedImages.length > 0 ? uploadedImages : undefined
+      );
       const fullAnalysis: CARAnalysis = {
         id: crypto.randomUUID(),
         representativeName: repName,
         clientName,
-
         caseNumber: result.extractedMeta?.caseNumber || meta.caseNumber || "",
         productType: result.extractedMeta?.productType || meta.productType || "",
         policyNumber: result.extractedMeta?.policyNumber || meta.policyNumber || "",
         insurerName: result.extractedMeta?.insurerName || meta.insurerName || "",
         adviceDate: result.extractedMeta?.adviceDate || meta.adviceDate || "",
-
         submittedAt: new Date().toISOString(),
         carText,
         overallScore: result.overallScore ?? 0,
@@ -330,7 +405,6 @@ Return ONLY this JSON:
         strengths: result.strengths ?? [],
         createdByCodeId: activeCodeId,
       };
-
       saveToHistory(fullAnalysis);
       setAnalysis(fullAnalysis);
       setStep("results");
@@ -341,54 +415,63 @@ Return ONLY this JSON:
     }
   };
 
+  // ── Reset ─────────────────────────────────────────────────────
+  const resetInput = () => {
+    setStep("input");
+    setAnalysis(null);
+    setCarText("");
+    setRepName("");
+    setClientName("");
+    setMeta({ caseNumber: "", productType: "", policyNumber: "", insurerName: "", adviceDate: "" });
+    setUploadedImages([]);
+    setFileList([]);
+    setError(null);
+  };
+
   // ── PDF download ──────────────────────────────────────────────
   const handleDownloadPdf = async () => {
-  if (!resultRef.current) {
-    alert("Nothing to download yet. Run an analysis first.");
-    return;
-  }
-
-  setIsDownloading(true);
-  try {
-    const filenameParts = [
-      "CAR_Analysis",
-      repName?.trim(),
-      clientName?.trim(),
-      meta.productType?.trim(),
-      meta.policyNumber?.trim(),
-      meta.adviceDate?.trim(),
-    ].filter(Boolean);
-
-    const filename =
-      filenameParts.map(p => p!.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "")).join("_") +
-      ".pdf";
-
-    await (html2pdf as any)()
-      .set({
-        margin: [15, 15],
-        filename,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      })
-      .from(resultRef.current)
-      .save();
-  } catch (e) {
-    console.error("PDF download failed:", e);
-    alert("PDF download failed. Open Console (F12) and send me the error shown.");
-  } finally {
-    setIsDownloading(false);
-  }
-};
-
+    if (!resultRef.current) {
+      alert("Nothing to download yet. Run an analysis first.");
+      return;
+    }
+    setIsDownloading(true);
+    try {
+      const filenameParts = [
+        "CAR_Analysis",
+        repName?.trim(),
+        clientName?.trim(),
+        meta.productType?.trim(),
+        meta.policyNumber?.trim(),
+        meta.adviceDate?.trim(),
+      ].filter(Boolean);
+      const filename =
+        filenameParts
+          .map((p) => p!.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, ""))
+          .join("_") + ".pdf";
+      await (html2pdf as any)()
+        .set({
+          margin: [15, 15],
+          filename,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        })
+        .from(resultRef.current)
+        .save();
+    } catch (e) {
+      console.error("PDF download failed:", e);
+      alert("PDF download failed. Open Console (F12) and send me the error shown.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const scoreColor = (s: number) => (s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : "#ef4444");
-
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
   // ──────────────────────────────────────────────────────────────
-  // RENDER (keeps your original UI layout)
+  // RENDER
   // ──────────────────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -433,7 +516,10 @@ Return ONLY this JSON:
                   key={h.id}
                   className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
                 >
-                  <div className="flex-1 cursor-pointer" onClick={() => { setAnalysis(h); setStep("results"); }}>
+                  <div
+                    className="flex-1 cursor-pointer"
+                    onClick={() => { setAnalysis(h); setStep("results"); }}
+                  >
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="font-bold text-slate-900">{h.representativeName}</span>
                       <span className="text-slate-400">→</span>
@@ -459,7 +545,10 @@ Return ONLY this JSON:
                   <div className="flex items-center gap-3 ml-4">
                     <div
                       className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0"
-                      style={{ backgroundColor: `${scoreColor(h.overallScore)}20`, color: scoreColor(h.overallScore) }}
+                      style={{
+                        backgroundColor: `${scoreColor(h.overallScore)}20`,
+                        color: scoreColor(h.overallScore),
+                      }}
                     >
                       {h.overallScore}%
                     </div>
@@ -480,10 +569,9 @@ Return ONLY this JSON:
       {/* INPUT */}
       {step === "input" && (
         <div className="space-y-6">
-          {/* Required details */}
+          {/* Document details */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-bold text-slate-900 mb-4">Document Details</h2>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
@@ -511,13 +599,15 @@ Return ONLY this JSON:
 
             <div className="border-t border-slate-100 pt-4">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Auto-Extracted Details</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Auto-Extracted Details
+                </p>
                 {isExtracting ? (
                   <span className="text-xs text-[#005f6b] font-medium animate-pulse">Extracting…</span>
                 ) : hasSomeMeta ? (
                   <span className="text-xs text-emerald-600 font-medium">Auto-filled</span>
                 ) : (
-                  <span className="text-xs text-slate-400">Upload/Paste document to auto-fill</span>
+                  <span className="text-xs text-slate-400">Upload / Paste document to auto-fill</span>
                 )}
               </div>
 
@@ -543,7 +633,6 @@ Return ONLY this JSON:
                   </div>
                 ))}
               </div>
-
               <p className="text-xs text-slate-400 mt-3">
                 Tip: At least one of Case / Product / Policy / Advice Date must be filled to enable Analyse.
               </p>
@@ -567,7 +656,7 @@ Return ONLY this JSON:
                   inputMethod === "upload" ? "bg-[#005f6b] text-white" : "bg-slate-100 text-slate-600"
                 }`}
               >
-                Upload File
+                Upload Files
               </button>
             </div>
 
@@ -580,30 +669,116 @@ Return ONLY this JSON:
                 placeholder="Paste the full CAR/ROA text here..."
               />
             ) : (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-300 rounded-xl p-12 text-center cursor-pointer hover:border-[#005f6b] hover:bg-slate-50 transition-all"
-              >
-                <p className="font-bold text-slate-700 mb-1">Click to upload</p>
-                <p className="text-sm text-slate-400">Supports .txt, .pdf (digital text), images (no OCR)</p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.pdf,image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                {carText && (
-                  <div className="mt-4 p-3 bg-emerald-50 rounded-lg">
-                    <p className="text-emerald-700 font-medium text-sm">File loaded successfully</p>
-                    <p className="text-emerald-600 text-xs mt-1">{carText.length} characters extracted</p>
+              <div>
+                {/* Drop zone */}
+                <div
+                  onClick={() => !isExtracting && fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-10 text-center transition-all ${
+                    isExtracting
+                      ? "border-[#005f6b] bg-teal-50 cursor-wait"
+                      : "border-slate-300 cursor-pointer hover:border-[#005f6b] hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="text-4xl mb-3">{isExtracting ? "⏳" : "📂"}</div>
+                  {isExtracting ? (
+                    <>
+                      <p className="font-bold text-[#005f6b] mb-1 animate-pulse">Processing…</p>
+                      <p className="text-sm text-teal-700">{uploadStatus || "Please wait…"}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-bold text-slate-700 mb-1">Click to select files</p>
+                      <p className="text-sm text-slate-500">PDF documents · Screenshots · Photos</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Select multiple files at once · Scanned PDFs auto-converted via Vision AI
+                      </p>
+                    </>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt,.pdf,image/*"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* File list */}
+                {fileList.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {fileList.map((f, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-3 px-4 py-2.5 rounded-xl ${
+                          f.status === "error"
+                            ? "bg-red-50"
+                            : f.isImage
+                            ? "bg-violet-50"
+                            : "bg-emerald-50"
+                        }`}
+                      >
+                        <span className="text-lg">{f.isImage ? "🖼️" : "📄"}</span>
+                        <span
+                          className={`text-sm font-medium flex-1 truncate ${
+                            f.status === "error"
+                              ? "text-red-700"
+                              : f.isImage
+                              ? "text-violet-700"
+                              : "text-emerald-700"
+                          }`}
+                        >
+                          {f.name}
+                        </span>
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                            f.status === "error"
+                              ? "bg-red-100 text-red-600"
+                              : f.isImage
+                              ? "bg-violet-100 text-violet-700"
+                              : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {f.status === "error" ? "Error" : f.isImage ? "Vision AI" : "Text"}
+                        </span>
+                      </div>
+                    ))}
+
+                    {/* Summary */}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {carText.trim().length > 0 && (
+                        <span className="text-xs px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium">
+                          {carText.length.toLocaleString()} chars extracted
+                        </span>
+                      )}
+                      {uploadedImages.length > 0 && (
+                        <span className="text-xs px-2.5 py-1 bg-violet-100 text-violet-700 rounded-full font-medium">
+                          {uploadedImages.length} image{uploadedImages.length > 1 ? "s" : ""} ready for Vision analysis
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFileList([]);
+                        setCarText("");
+                        setUploadedImages([]);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                      className="w-full text-center text-xs text-slate-400 hover:text-red-500 py-1 transition-colors mt-1"
+                    >
+                      Clear all files
+                    </button>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">{error}</div>}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">{error}</div>
+          )}
 
           {/* Analyse button */}
           <div className="sticky bottom-8 flex justify-center">
@@ -637,21 +812,12 @@ Return ONLY this JSON:
             >
               {isDownloading ? "Generating…" : "Download PDF"}
             </button>
-
             <button
-              onClick={() => {
-                setStep("input");
-                setAnalysis(null);
-                setCarText("");
-                setRepName("");
-                setClientName("");
-                setMeta({ caseNumber: "", productType: "", policyNumber: "", insurerName: "", adviceDate: "" });
-              }}
+              onClick={resetInput}
               className="px-6 py-2.5 bg-white border-2 border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50"
             >
               Analyse Another CAR
             </button>
-
             <button
               onClick={() => setStep("history")}
               className="px-6 py-2.5 bg-white border-2 border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50"
@@ -675,7 +841,6 @@ Return ONLY this JSON:
                     {analysis.overallScore}%
                   </div>
                 </div>
-
                 <div className="flex-1">
                   <div className="flex flex-wrap gap-2 mb-3">
                     <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full">
@@ -688,7 +853,6 @@ Return ONLY this JSON:
                       {formatDate(analysis.submittedAt)}
                     </span>
                   </div>
-
                   <p className="text-slate-700">{analysis.overallVerdict}</p>
                 </div>
               </div>
@@ -698,12 +862,10 @@ Return ONLY this JSON:
               <h2 className="text-xl font-bold text-slate-900 mb-4">
                 Issues Identified ({analysis.issues.length})
               </h2>
-
               <div className="space-y-4">
                 {analysis.issues.map((issue: CARIssue, idx: number) => {
                   const cfg = severityConfig[issue.severity] || severityConfig.LOW;
                   const isOpen = expandedIssue === idx;
-
                   return (
                     <div
                       key={idx}
@@ -715,7 +877,10 @@ Return ONLY this JSON:
                         className="w-full text-left p-6 flex items-start justify-between gap-4 hover:bg-slate-50"
                       >
                         <div className="flex items-start gap-4 flex-1">
-                          <span className="px-2 py-1 rounded-lg text-xs font-black" style={{ backgroundColor: cfg.bg, color: cfg.color }}>
+                          <span
+                            className="px-2 py-1 rounded-lg text-xs font-black"
+                            style={{ backgroundColor: cfg.bg, color: cfg.color }}
+                          >
                             {cfg.label}
                           </span>
                           <div>
@@ -729,14 +894,16 @@ Return ONLY this JSON:
                       {isOpen && (
                         <div className="border-t border-slate-100">
                           <div className="p-6" style={{ backgroundColor: cfg.bg }}>
-                            <p className="text-xs font-black uppercase tracking-wider mb-2" style={{ color: cfg.color }}>
+                            <p
+                              className="text-xs font-black uppercase tracking-wider mb-2"
+                              style={{ color: cfg.color }}
+                            >
                               What Was Written
                             </p>
                             <p className="text-slate-700 italic bg-white rounded-lg p-4 border text-sm">
                               {issue.whatWasWritten || "Not addressed in the document"}
                             </p>
                           </div>
-
                           <div className="p-6 bg-white">
                             <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">
                               What Should Have Been Written
@@ -752,7 +919,6 @@ Return ONLY this JSON:
                 })}
               </div>
             </div>
-
           </div>
         </div>
       )}

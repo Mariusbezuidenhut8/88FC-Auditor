@@ -21,6 +21,9 @@ const ReportView: React.FC<ReportViewProps> = ({
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [editingActionId, setEditingActionId] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
 
   useEffect(() => {
     const fetchSummary = async () => {
@@ -67,8 +70,29 @@ const ReportView: React.FC<ReportViewProps> = ({
     const updatedActions = report.remedialActions.map(action =>
       action.id === actionId ? { ...action, status } : action
     );
-    const updatedReport = { ...report, remedialActions: updatedActions };
-    onUpdateReport(updatedReport);
+    onUpdateReport({ ...report, remedialActions: updatedActions });
+  };
+
+  const handleStartEditAction = (action: RemedialAction) => {
+    setEditingActionId(action.id);
+    setEditDescription(action.description);
+    setEditDueDate(action.dueDate);
+  };
+
+  const handleSaveActionEdit = (actionId: string) => {
+    const updatedActions = report.remedialActions.map(action =>
+      action.id === actionId
+        ? { ...action, description: editDescription, dueDate: editDueDate }
+        : action
+    );
+    onUpdateReport({ ...report, remedialActions: updatedActions });
+    setEditingActionId(null);
+  };
+
+  const handleAcceptReport = () => {
+    if (window.confirm("Accept this report? This marks it as formally reviewed and approved by the auditor.")) {
+      onUpdateReport({ ...report, accepted: true, acceptedAt: new Date().toISOString() });
+    }
   };
 
   const generateEmailBody = () => {
@@ -174,8 +198,26 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
         </div>
         
         <div className="flex flex-wrap gap-2 md:gap-3">
+          {report.accepted ? (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-700 text-sm font-black">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              ACCEPTED {report.acceptedAt ? `· ${formatDate(report.acceptedAt.split('T')[0])}` : ''}
+            </div>
+          ) : (
+            <button
+              onClick={handleAcceptReport}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-black transition-all bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Accept Report
+            </button>
+          )}
           {unresolvedActions.length > 0 && (
-            <button 
+            <button
               onClick={onFollowUp}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-black transition-all bg-amber-500 text-white shadow-lg hover:bg-amber-600 text-sm"
             >
@@ -329,64 +371,121 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
                 </div>
               ) : (
                 report.remedialActions.map((action, index) => (
-                  <div 
-                    key={action.id} 
+                  <div
+                    key={action.id}
                     className={`p-5 rounded-[2rem] border transition-all ${
-                      action.status === 'RESOLVED' 
-                        ? 'bg-emerald-50/20 opacity-60 border-emerald-100' 
+                      action.status === 'RESOLVED'
+                        ? 'bg-emerald-50/20 opacity-60 border-emerald-100'
                         : 'bg-rose-50/10 border-rose-100 shadow-sm'
                     } print:rounded-xl`}
                   >
                     <div className="flex gap-4 items-start">
                       <div className={`w-3 h-3 rounded-full mt-1 shrink-0 ${
-                        action.status === 'RESOLVED' 
-                          ? 'bg-emerald-500' 
+                        action.status === 'RESOLVED'
+                          ? 'bg-emerald-500'
                           : 'bg-rose-500 animate-pulse'
                       }`}></div>
                       <div className="flex-1">
-                        <p className="text-sm font-bold text-slate-800 leading-relaxed">
-                          {action.description}
-                        </p>
-                        {action.dueDate && action.status !== 'RESOLVED' && (
-                          <div className="flex items-center gap-2 mt-2">
-                            <svg className="w-3 h-3 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                            </svg>
-                            <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest">
-                              Due: {formatDate(action.dueDate)}
-                            </p>
+
+                        {editingActionId === action.id ? (
+                          /* ── Inline edit mode ── */
+                          <div className="space-y-3 print:hidden">
+                            <div>
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                                Corrective Step
+                              </label>
+                              <textarea
+                                value={editDescription}
+                                onChange={e => setEditDescription(e.target.value)}
+                                rows={3}
+                                className="w-full text-sm font-medium text-slate-800 border border-slate-300 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-teal-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                                Deadline
+                              </label>
+                              <input
+                                type="date"
+                                value={editDueDate}
+                                onChange={e => setEditDueDate(e.target.value)}
+                                className="text-sm font-medium text-slate-800 border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleSaveActionEdit(action.id)}
+                                className="text-[10px] font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 hover:bg-teal-200 transition-colors uppercase tracking-wider"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingActionId(null)}
+                                className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors uppercase tracking-wider"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                        )}
-                        {action.status === 'RESOLVED' && (
-                          <div className="flex items-center gap-2 mt-2">
-                            <svg className="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
-                              Resolved
+                        ) : (
+                          /* ── Read mode ── */
+                          <>
+                            <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                              {action.description}
                             </p>
-                          </div>
+                            {action.dueDate && action.status !== 'RESOLVED' && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <svg className="w-3 h-3 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest">
+                                  Due: {formatDate(action.dueDate)}
+                                </p>
+                              </div>
+                            )}
+                            {action.status === 'RESOLVED' && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <svg className="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
+                                  Resolved
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Action buttons – hidden from PDF */}
+                            <div className="flex gap-2 mt-3 print:hidden">
+                              {action.status === 'PENDING' && (
+                                <>
+                                  <button
+                                    onClick={() => handleUpdateActionStatus(action.id, 'RESOLVED')}
+                                    className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors uppercase tracking-wider"
+                                  >
+                                    Mark Resolved
+                                  </button>
+                                  <button
+                                    onClick={() => handleStartEditAction(action)}
+                                    className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors uppercase tracking-wider flex items-center gap-1"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                    Edit
+                                  </button>
+                                </>
+                              )}
+                              {action.status === 'RESOLVED' && (
+                                <button
+                                  onClick={() => handleUpdateActionStatus(action.id, 'PENDING')}
+                                  className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors uppercase tracking-wider"
+                                >
+                                  Reopen
+                                </button>
+                              )}
+                            </div>
+                          </>
                         )}
-                        
-                        {/* Action buttons - only show in UI, not in PDF */}
-                        <div className="flex gap-2 mt-3 print:hidden">
-                          {action.status === 'PENDING' && (
-                            <button
-                              onClick={() => handleUpdateActionStatus(action.id, 'RESOLVED')}
-                              className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors uppercase tracking-wider"
-                            >
-                              Mark Resolved
-                            </button>
-                          )}
-                          {action.status === 'RESOLVED' && (
-                            <button
-                              onClick={() => handleUpdateActionStatus(action.id, 'PENDING')}
-                              className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors uppercase tracking-wider"
-                            >
-                              Reopen
-                            </button>
-                          )}
-                        </div>
                       </div>
                     </div>
                   </div>

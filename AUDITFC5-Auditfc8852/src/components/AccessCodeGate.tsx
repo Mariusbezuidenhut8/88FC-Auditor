@@ -22,7 +22,7 @@ const AccessCodeGate: React.FC<AccessCodeGateProps> = ({
 
     // --- ADMIN MODE ---
     if (isAdminMode) {
-      if (cleanInput === "ADMIN-8851") {
+      if (cleanInput === "88Wealth-88-26") {
         onAccessGranted("admin-id", "ADMIN");
       } else {
         setError("Invalid Admin Credentials");

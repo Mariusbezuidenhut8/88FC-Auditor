@@ -323,13 +323,68 @@ export const testAzureConnection = async (): Promise<boolean> => {
   }
 };
 
-// 5) CAR Evaluator
+// 5a) Extract CAR metadata from images (Vision)
+export const extractCARDetailsFromImages = async (
+  images: Array<{ base64: string; mimeType: string }>
+): Promise<{
+  representativeName?: string;
+  clientName?: string;
+  caseNumber?: string;
+  productType?: string;
+  policyNumber?: string;
+  insurerName?: string;
+  adviceDate?: string;
+}> => {
+  const imageContent = images.slice(0, 5).map((img) => ({
+    type: "image_url",
+    image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+  }));
+
+  const content = await callAzureOpenAI([
+    {
+      role: "system",
+      content:
+        "You are a document parser. Extract key details from financial advice document images including handwritten notes. Return ONLY valid JSON. No markdown.",
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `Extract the following details from these Client Advice Record document images. If a field is not found return an empty string.
+
+Return ONLY this JSON:
+{
+  "representativeName": "",
+  "clientName": "",
+  "caseNumber": "",
+  "productType": "",
+  "policyNumber": "",
+  "insurerName": "",
+  "adviceDate": ""
+}`,
+        },
+        ...imageContent,
+      ],
+    },
+  ]);
+
+  const clean = content.replace(/```json/gi, "").replace(/```/g, "").trim();
+  return JSON.parse(clean);
+};
+
+// 5b) CAR Evaluator
 export const evaluateCAR = async (
   carText: string,
   representativeName: string,
   clientName: string,
-  meta?: { caseNumber?: string; productType?: string; policyNumber?: string; insurerName?: string; adviceDate?: string }
+  meta?: { caseNumber?: string; productType?: string; policyNumber?: string; insurerName?: string; adviceDate?: string },
+  images?: Array<{ base64: string; mimeType: string }>
 ): Promise<any> => {
+
+  const docSection = carText.trim()
+    ? `CLIENT ADVICE RECORD TEXT:\n"""\n${carText}\n"""`
+    : `CLIENT ADVICE RECORD: See attached document images below.`;
 
   const prompt = `You are a senior FAIS compliance specialist at Fairbairn Consult evaluating a Client Advice Record (CAR) / Record of Advice (ROA).
 
@@ -337,10 +392,7 @@ DOCUMENT DETAILS:
 Representative: ${representativeName}
 Client: ${clientName}
 
-CLIENT ADVICE RECORD TEXT:
-"""
-${carText}
-"""
+${docSection}
 
 Your tasks:
 1. EXTRACT key details from the document (case number, product type, policy number, insurer, date of advice)
@@ -381,12 +433,23 @@ Rules:
 - Only include real issues actually found in the document
 - Return ONLY the JSON with no markdown`;
 
+  const imageContent = (images || []).slice(0, 5).map((img) => ({
+    type: "image_url",
+    image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+  }));
+
+  const userContent: any =
+    imageContent.length > 0
+      ? [{ type: "text", text: prompt }, ...imageContent]
+      : prompt;
+
   const content = await callAzureOpenAI([
     {
       role: "system",
-      content: "You are a FAIS compliance specialist. Extract document details and evaluate Client Advice Records. Return ONLY valid JSON. Never return markdown or text outside the JSON."
+      content:
+        "You are a FAIS compliance specialist. Extract document details and evaluate Client Advice Records. Return ONLY valid JSON. Never return markdown or text outside the JSON.",
     },
-    { role: "user", content: prompt }
+    { role: "user", content: userContent },
   ]);
 
   const clean = content.replace(/```json/gi, "").replace(/```/g, "").trim();

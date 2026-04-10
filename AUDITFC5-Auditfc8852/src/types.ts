@@ -43,6 +43,8 @@ export interface ComplianceReport {
   iteration: number;
   parentReportId?: string;
   createdByCodeId: string; // ADDED - your App.tsx uses this
+  accepted?: boolean;
+  acceptedAt?: string;
 }
 
 /**
