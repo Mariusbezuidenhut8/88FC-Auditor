@@ -53,7 +53,7 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
     initialFindings ||
       CHECKLIST_ITEMS.map((item) => ({
         itemId: item.id,
-        status: "YES" as Status,
+        status: "NO" as Status,
         comment: "",
       }))
   );
