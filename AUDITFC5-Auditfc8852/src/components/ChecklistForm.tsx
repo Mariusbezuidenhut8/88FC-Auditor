@@ -4,6 +4,14 @@ import { Status, Finding, ReviewMetadata } from "../types";
 import { CHECKLIST_ITEMS } from "../constants";
 import { extractAuditDataFromFile, extractAuditDataFromPages } from "../azureOpenAIService";
 
+interface ExcelRow {
+  representativeName: string;
+  accountCode: string;
+  clientName: string;
+  insurerName: string;
+  policyNo: string;
+}
+
 // PDF.js for rendering PDF pages as images (supports handwritten notes)
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -52,6 +60,54 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
 
   const [isExtracting, setIsExtracting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [showExcelImport, setShowExcelImport] = useState(false);
+  const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
+  const [excelPasteText, setExcelPasteText] = useState("");
+
+  const parseExcelText = (text: string): ExcelRow[] => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const rows: ExcelRow[] = [];
+    for (const line of lines) {
+      const cols = line.split('\t');
+      if (cols.length < 8) continue;
+      const accountName = cols[1]?.trim() || '';
+      if (!accountName || accountName.toLowerCase() === 'account name') continue;
+      rows.push({
+        representativeName: accountName,
+        accountCode: cols[2]?.trim() || '',
+        clientName: cols[3]?.trim() || '',
+        insurerName: cols[4]?.trim() || '',
+        policyNo: cols[7]?.trim() || '',
+      });
+    }
+    return rows;
+  };
+
+  const handleExcelPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData('text');
+    setExcelPasteText(text);
+    setExcelRows(parseExcelText(text));
+  };
+
+  const handleExcelTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    setExcelPasteText(text);
+    setExcelRows(parseExcelText(text));
+  };
+
+  const handleSelectExcelRow = (row: ExcelRow) => {
+    setMetadata(prev => ({
+      ...prev,
+      representativeName: row.representativeName,
+      clientName: row.clientName,
+      insurerName: row.insurerName,
+      policyNo: row.policyNo,
+    }));
+    setShowExcelImport(false);
+    setExcelRows([]);
+    setExcelPasteText('');
+  };
 
   const handleStatusChange = (itemId: string, status: Status) => {
     setFindings((prev) => prev.map((f) => (f.itemId === itemId ? { ...f, status } : f)));
@@ -205,6 +261,93 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
         <p className="text-slate-500 uppercase tracking-wider text-sm font-semibold">
           Azure AI Powered Management {iteration > 0 ? `• Iteration ${iteration}` : ""}
         </p>
+      </div>
+
+      {/* Excel Import Panel */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => { setShowExcelImport(v => !v); setExcelRows([]); setExcelPasteText(''); }}
+          className="w-full flex items-center justify-between px-8 py-4 hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+              <svg className="w-4 h-4 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-black text-slate-800 uppercase tracking-wide">Load from Excel</p>
+              <p className="text-xs text-slate-400">Copy rows from your spreadsheet and paste below to select a file</p>
+            </div>
+          </div>
+          <svg className={`w-5 h-5 text-slate-400 transition-transform ${showExcelImport ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </button>
+
+        {showExcelImport && (
+          <div className="border-t border-slate-100 px-8 py-6 space-y-4">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                Step 1 — Select all rows in Excel (Ctrl+A or highlight rows), then Ctrl+C and paste below
+              </p>
+              <textarea
+                rows={3}
+                value={excelPasteText}
+                onPaste={handleExcelPaste}
+                onChange={handleExcelTextChange}
+                placeholder="Paste Excel rows here…"
+                className="w-full text-xs font-mono text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+            </div>
+
+            {excelRows.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                  Step 2 — Click a row to load it into the audit form ({excelRows.length} records found)
+                </p>
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {excelRows.map((row, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleSelectExcelRow(row)}
+                      className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 transition-all group"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-black text-slate-800 truncate group-hover:text-emerald-800">
+                            {row.representativeName}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate mt-0.5">
+                            {row.clientName} · {row.insurerName}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Policy</p>
+                          <p className="text-xs font-black text-slate-700">{row.policyNo || '—'}</p>
+                        </div>
+                        {row.accountCode && (
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Code</p>
+                            <p className="text-xs font-black text-slate-700">{row.accountCode}</p>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {excelPasteText && excelRows.length === 0 && (
+              <p className="text-xs text-rose-500 font-bold">
+                No valid rows detected. Make sure you copy from column A (Payment Period) through at least column H (Policy Number).
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Metadata Form Card */}
