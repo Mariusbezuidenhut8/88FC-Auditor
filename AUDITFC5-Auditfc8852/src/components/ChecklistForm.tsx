@@ -19,13 +19,14 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 interface ChecklistFormProps {
   onSubmit: (metadata: ReviewMetadata, findings: Finding[]) => void;
-  onPreview: (metadata: ReviewMetadata, findings: Finding[]) => void;
+  onPreview: (data: { metadata: ReviewMetadata; findings: Finding[] }) => void;
   isSubmitting: boolean;
   initialMetadata?: ReviewMetadata | null;
   initialFindings?: Finding[] | null;
   iteration?: number;
   hasApiKey: boolean;
   onSelectKey: () => void;
+  onCaseSelected?: (meta: { representativeName: string; clientName: string; policyNo: string; insurerName: string }) => void;
 }
 
 const ChecklistForm: React.FC<ChecklistFormProps> = ({
@@ -37,6 +38,7 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
   iteration = 0,
   hasApiKey,
   onSelectKey,
+  onCaseSelected,
 }) => {
   const [metadata, setMetadata] = useState<ReviewMetadata>(
     initialMetadata || {
@@ -64,6 +66,8 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
   const [showExcelImport, setShowExcelImport] = useState(false);
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
   const [excelPasteText, setExcelPasteText] = useState("");
+  const [excelSearch, setExcelSearch] = useState("");
+  const [loadedCaseName, setLoadedCaseName] = useState<string | null>(null);
 
   const parseExcelText = (text: string): ExcelRow[] => {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -104,9 +108,17 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
       insurerName: row.insurerName,
       policyNo: row.policyNo,
     }));
+    onCaseSelected?.({
+      representativeName: row.representativeName,
+      clientName: row.clientName,
+      policyNo: row.policyNo,
+      insurerName: row.insurerName,
+    });
+    setLoadedCaseName(`${row.clientName || row.representativeName}`);
     setShowExcelImport(false);
     setExcelRows([]);
     setExcelPasteText('');
+    setExcelSearch('');
   };
 
   const handleStatusChange = (itemId: string, status: Status) => {
@@ -251,6 +263,8 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
     onPreview({ metadata, findings });
   };
 
+  const handlePreviewClick = () => onPreview({ metadata, findings });
+
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       {/* Header */}
@@ -267,7 +281,14 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
         <button
           type="button"
-          onClick={() => { setShowExcelImport(v => !v); setExcelRows([]); setExcelPasteText(''); }}
+          onClick={() => {
+            if (showExcelImport) {
+              setExcelRows([]);
+              setExcelPasteText('');
+              setExcelSearch('');
+            }
+            setShowExcelImport(v => !v);
+          }}
           className="w-full flex items-center justify-between px-8 py-4 hover:bg-slate-50 transition-colors"
         >
           <div className="flex items-center gap-3">
@@ -278,8 +299,13 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
             </div>
             <div className="text-left">
               <p className="text-sm font-black text-slate-800 uppercase tracking-wide">Load from Excel</p>
-              <p className="text-xs text-slate-400">Copy rows from your spreadsheet and paste below to select a file</p>
+              <p className="text-xs text-slate-400">Copy rows from your spreadsheet and paste below to select a case</p>
             </div>
+            {loadedCaseName && !showExcelImport && (
+              <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200">
+                ✓ {loadedCaseName}
+              </span>
+            )}
           </div>
           <svg className={`w-5 h-5 text-slate-400 transition-transform ${showExcelImport ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"/>
@@ -307,36 +333,54 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
                   Step 2 — Click a row to load it into the audit form ({excelRows.length} records found)
                 </p>
+                <input
+                  type="text"
+                  value={excelSearch}
+                  onChange={e => setExcelSearch(e.target.value)}
+                  placeholder="Search by name, client or policy…"
+                  className="w-full px-4 py-2 mb-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                />
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {excelRows.map((row, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => handleSelectExcelRow(row)}
-                      className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 transition-all group"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-black text-slate-800 truncate group-hover:text-emerald-800">
-                            {row.representativeName}
-                          </p>
-                          <p className="text-xs text-slate-500 truncate mt-0.5">
-                            {row.clientName} · {row.insurerName}
-                          </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Policy</p>
-                          <p className="text-xs font-black text-slate-700">{row.policyNo || '—'}</p>
-                        </div>
-                        {row.accountCode && (
-                          <div className="shrink-0 text-right">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Code</p>
-                            <p className="text-xs font-black text-slate-700">{row.accountCode}</p>
+                  {excelRows
+                    .filter(row => {
+                      const q = excelSearch.toLowerCase();
+                      return !q || row.representativeName.toLowerCase().includes(q) || row.clientName.toLowerCase().includes(q) || row.policyNo.toLowerCase().includes(q);
+                    })
+                    .map((row, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSelectExcelRow(row)}
+                        className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 active:bg-emerald-100 active:border-emerald-500 transition-all group cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-black text-slate-800 truncate group-hover:text-emerald-800">
+                              {row.representativeName}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                              {row.clientName} · {row.insurerName}
+                            </p>
                           </div>
-                        )}
-                      </div>
-                    </button>
-                  ))}
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Policy</p>
+                            <p className="text-xs font-black text-slate-700">{row.policyNo || '—'}</p>
+                          </div>
+                          {row.accountCode && (
+                            <div className="shrink-0 text-right">
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Code</p>
+                              <p className="text-xs font-black text-slate-700">{row.accountCode}</p>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  {excelSearch && excelRows.filter(row => {
+                    const q = excelSearch.toLowerCase();
+                    return row.representativeName.toLowerCase().includes(q) || row.clientName.toLowerCase().includes(q) || row.policyNo.toLowerCase().includes(q);
+                  }).length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-4">No records match your search.</p>
+                  )}
                 </div>
               </div>
             )}
@@ -504,7 +548,8 @@ const ChecklistForm: React.FC<ChecklistFormProps> = ({
       {/* Action Button */}
       <div className="sticky bottom-8 flex justify-center">
         <button
-          onClick={handlePreview}
+          type="button"
+          onClick={handlePreviewClick}
           disabled={isSubmitting || isExtracting}
           className="px-12 py-4 bg-gradient-to-r from-[#005f6b] to-[#007b8a] text-white font-bold text-lg rounded-full shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >

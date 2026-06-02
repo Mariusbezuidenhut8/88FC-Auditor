@@ -14,9 +14,10 @@ import {
 } from "./types";
 import { generateRemedialActions } from "./azureOpenAIService";
 import { CHECKLIST_ITEMS } from "./constants";
-import CARAnalyzer from "./components/CARAnalyzer";
+import CARAnalyzer, { CaseContext } from "./components/CARAnalyzer";
+import RiskTrends from "./components/RiskTrends";
 
-type View = "history" | "form" | "report" | "admin" | "car";
+type View = "history" | "form" | "report" | "admin" | "car" | "risks";
 
 const App: React.FC = () => {
   const [role, setRole] = useState<UserRole>("NONE");
@@ -28,6 +29,8 @@ const App: React.FC = () => {
 
   const [accessCodes, setAccessCodes] = useState<AccessCode[]>([]);
   const [activeCodeId, setActiveCodeId] = useState<string | null>(null);
+
+  const [selectedCaseMeta, setSelectedCaseMeta] = useState<CaseContext | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewData, setPreviewData] = useState<{
@@ -58,6 +61,14 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Error loading reports", e);
       localStorage.removeItem("audit_reports");
+    }
+
+    try {
+      const savedCase = localStorage.getItem("active_case");
+      if (savedCase) setSelectedCaseMeta(JSON.parse(savedCase));
+    } catch (e) {
+      console.error("Error loading active case", e);
+      localStorage.removeItem("active_case");
     }
 
     try {
@@ -124,9 +135,16 @@ const App: React.FC = () => {
     setActiveCodeId(null);
   };
 
+  const handleCaseSelected = (meta: CaseContext) => {
+    setSelectedCaseMeta(meta);
+    localStorage.setItem("active_case", JSON.stringify(meta));
+  };
+
   const handleStartNewReview = () => {
     setEditingData(null);
     setCurrentReportId(null);
+    setSelectedCaseMeta(null);
+    localStorage.removeItem("active_case");
     setView("form");
   };
 
@@ -229,7 +247,7 @@ const App: React.FC = () => {
       const remedialActions: RemedialAction[] = actions.map((action) => ({
         id: crypto.randomUUID(),
         description: action,
-        dueDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000)
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
           .toISOString()
           .split("T")[0],
         status: "PENDING",
@@ -346,16 +364,31 @@ const App: React.FC = () => {
             )}
 
             {role !== "NONE" && (
-              <button
-                onClick={() => setView("car")}
-                className={`text-sm font-bold px-3 py-1.5 rounded-lg transition-all ${
-                  view === "car"
-                    ? "bg-[#005f6b] text-white"
-                    : "text-slate-300 hover:text-white hover:bg-slate-700"
-                }`}
-              >
-                CAR Evaluator
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setView("risks")}
+                  className={`text-sm font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                    view === "risks"
+                      ? "bg-[#1a2e4a] text-white"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                  </svg>
+                  Risks &amp; Trends
+                </button>
+                <button
+                  onClick={() => setView("car")}
+                  className={`text-sm font-bold px-3 py-1.5 rounded-lg transition-all ${
+                    view === "car"
+                      ? "bg-[#005f6b] text-white"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700"
+                  }`}
+                >
+                  CAR Evaluator
+                </button>
+              </div>
             )}
 
             <div className="flex items-center gap-2">
@@ -412,6 +445,7 @@ const App: React.FC = () => {
             iteration={editingData?.iteration || 0}
             hasApiKey={hasApiKey === true}
             onSelectKey={() => setView("history")}
+            onCaseSelected={handleCaseSelected}
           />
         )}
 
@@ -546,10 +580,19 @@ const App: React.FC = () => {
           />
         )}
 
+        {view === "risks" && (
+          <RiskTrends
+            reports={reports}
+            onStartAudit={() => { setEditingData(null); setCurrentReportId(null); setView("form"); }}
+          />
+        )}
+
         {view === "car" && (
           <CARAnalyzer
             onBack={() => setView("history")}
+            onGoToAudit={() => { setEditingData(null); setCurrentReportId(null); setView("form"); }}
             activeCodeId={activeCodeId || "unknown"}
+            caseContext={selectedCaseMeta ?? undefined}
           />
         )}
       </main>

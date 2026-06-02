@@ -256,60 +256,51 @@ Compliance Score: ${score}%
 Items Passed: ${yesCount}/${totalCount}
 Items Failed: ${noCount}/${totalCount}
 
-${noCount > 0 ? `COMPLIANCE GAPS IDENTIFIED:
-${failedItems.map((f, i) => `${i + 1}. ${f.title}${f.subtitle ? ` - ${f.subtitle}` : ""}${f.comment ? `\n   Auditor Notes: ${f.comment}` : ""}`).join('\n\n')}` : 'All compliance items were satisfied.'}
+${noCount > 0 ? `COMPLIANCE GAPS IDENTIFIED:\n${failedItems.map((f, i) => `${i + 1}. ${f.title}${f.subtitle ? ` - ${f.subtitle}` : ""}${f.comment ? `\n   Auditor Notes: ${f.comment}` : ""}`).join('\n\n')}` : 'All compliance items were satisfied.'}
 
-Write a professional executive summary following this EXACT structure:
+Write a professional executive summary using this exact plain-text structure:
 
-**Compliance Summary**
-
-**Outcome:**
-[1-2 sentences on overall audit result, score, and whether gaps were found]
+Outcome:
+[1-2 sentences on overall result, score, and gaps]
 
 ---
 
-**Key Issues:**
-${noCount > 0 ? `[List the ${noCount} main compliance gaps as bullet points, being specific about WHAT was missing]` : '[State that all items were compliant]'}
+Key Issues:
+${noCount > 0 ? `[List the ${noCount} compliance gaps as bullet points starting with - ]` : '[State all items were compliant]'}
 
 ---
 
-**Risk Themes:**
-[Identify 2-3 risk categories these gaps create - regulatory, operational, reputational, client trust, etc.]
+Risk Themes:
+[2-3 risk categories these gaps create]
 
 ---
 
-**Next Steps:**
-[Outline the immediate actions required and any follow-up needed]
+Next Steps:
+[Immediate actions required]
 
 IMPORTANT:
-- Use the exact structure shown above with "---" dividers
-- Be concise but professional
-- Reference the representative and client by name
-- For perfect scores (100%), emphasize strong compliance culture
-- For failed audits, be direct but constructive
-- Use markdown formatting (**bold** for headers)
-- Keep total length under 400 words
-
-Return the summary text directly (no JSON, no code blocks):`;
+- Use ONLY plain text. Do NOT use **, ##, *, backticks, or any markdown symbols whatsoever.
+- Use --- as the only section divider.
+- Be concise and professional. Reference names. Under 350 words.
+- Return the summary text directly. No JSON. No code blocks.`;
 
   try {
     const content = await callAzureOpenAI([
       {
         role: "system",
-        content: "You are a compliance expert writing executive summaries. Write clear, professional summaries using the exact structure provided."
+        content: "You are a compliance expert. Write executive summaries in plain text only — no markdown, no asterisks, no bold symbols. Use the exact structure provided."
       },
       { role: "user", content: prompt },
     ]);
-    return content.trim();
+    return content.trim().replace(/\*\*/g, "").replace(/^\*\s/gm, "- ");
   } catch (e) {
     console.error("Summary generation failed:", e);
-    
-    // Fallback summary
+
     if (score === 100) {
-      return `**Compliance Summary**\n\n**Outcome:**\nThe compliance review for client ${metadata.clientName}, represented by ${metadata.representativeName}, was successfully completed with a perfect score of 100%. All compliance items were met, and no remedial actions are required.\n\n---\n\n**Key Issues:**\n- All compliance items were marked as "YES," indicating full adherence to regulatory and procedural requirements.\n- No deviations or gaps were identified during the review process.\n\n---\n\n**Risk Themes:**\n- No risks were identified as all compliance criteria were satisfied.\n- The review demonstrates strong adherence to compliance standards, minimizing exposure to regulatory or operational risks.\n\n---\n\n**Next Steps:**\n- Confirm closure of the review process by ensuring the status of the remedial action ("Review completed successfully. No remedial actions required") is updated to "COMPLETED" by the due date (${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}).\n- Continue maintaining high compliance standards in future reviews.`;
+      return `Outcome:\nThe compliance review for client ${metadata.clientName}, represented by ${metadata.representativeName}, was completed with a perfect score of 100%. All compliance items were met and no remedial actions are required.\n\n---\n\nKey Issues:\n- All compliance items were marked as compliant.\n- No deviations or gaps were identified during the review.\n\n---\n\nRisk Themes:\n- No risks identified. The review demonstrates strong adherence to compliance standards.\n\n---\n\nNext Steps:\n- Confirm closure of the review process and update the remedial action status to COMPLETED.\n- Continue maintaining high compliance standards in future reviews.`;
     }
-    
-    return `**Compliance Summary**\n\n**Outcome:**\nRepresentative ${metadata.representativeName} demonstrated ${score >= 70 ? 'good' : 'poor'} overall performance, achieving a compliance score of ${score}%. ${noCount === 1 ? 'A single identified gap requires' : `${noCount} identified gaps require`} targeted remediation to ensure full alignment with established operational standards.\n\n---\n\n**Key Issues:**\n${failedItems.map((f, i) => `- **${f.title}:** ${f.subtitle || 'Compliance gap identified'}`).join('\n')}\n\n---\n\n**Risk Themes:**\n- **Regulatory Non-Compliance:** ${noCount > 1 ? 'Multiple gaps pose' : 'The gap poses'} a risk of non-compliance with financial regulations.\n- **Operational Oversight:** ${noCount > 1 ? 'These gaps suggest' : 'This gap suggests'} potential weaknesses in internal processes and oversight mechanisms.\n${noCount > 2 ? '- **Client Trust and Transparency:** Documentation gaps may impact client confidence and transparency in communication.' : ''}\n\n---\n\n**Next Steps:**\n- Address all identified compliance gaps immediately\n- Complete required documentation and file appropriately\n- Submit for internal compliance review by ${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}`;
+
+    return `Outcome:\nRepresentative ${metadata.representativeName} achieved a compliance score of ${score}%. ${noCount === 1 ? 'One gap requires' : `${noCount} gaps require`} targeted remediation to ensure full alignment with established operational standards.\n\n---\n\nKey Issues:\n${failedItems.map((f) => `- ${f.title}: ${f.subtitle || 'Compliance gap identified'}`).join('\n')}\n\n---\n\nRisk Themes:\n- Regulatory Non-Compliance: ${noCount > 1 ? 'Multiple gaps pose' : 'The identified gap poses'} a risk of non-compliance with financial regulations.\n- Operational Oversight: ${noCount > 1 ? 'These gaps suggest' : 'This gap suggests'} weaknesses in internal processes.\n${noCount > 2 ? '- Client Trust: Documentation gaps may affect transparency and client confidence.\n' : ''}\n---\n\nNext Steps:\n- Address all compliance gaps immediately.\n- Complete required documentation and file appropriately.\n- Submit for internal compliance review by ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`;
   }
 };
 
@@ -379,18 +370,46 @@ export const evaluateCAR = async (
   representativeName: string,
   clientName: string,
   meta?: { caseNumber?: string; productType?: string; policyNumber?: string; insurerName?: string; adviceDate?: string },
-  images?: Array<{ base64: string; mimeType: string }>
+  images?: Array<{ base64: string; mimeType: string }>,
+  language?: "en" | "af"
 ): Promise<any> => {
+
+  const isAfrikaans = language === "af";
 
   const docSection = carText.trim()
     ? `CLIENT ADVICE RECORD TEXT:\n"""\n${carText}\n"""`
     : `CLIENT ADVICE RECORD: See attached document images below.`;
 
+  const knownMeta = meta && Object.values(meta).some(Boolean)
+    ? [
+        meta.caseNumber   && `Case Number: ${meta.caseNumber}`,
+        meta.productType  && `Product Type: ${meta.productType}`,
+        meta.policyNumber && `Policy Number: ${meta.policyNumber}`,
+        meta.insurerName  && `Insurer: ${meta.insurerName}`,
+        meta.adviceDate   && `Advice Date: ${meta.adviceDate}`,
+      ].filter(Boolean).join("\n")
+    : null;
+
+  const langRule = isAfrikaans
+    ? `TAAL / LANGUAGE: Die dokument is in Afrikaans geskryf. Skryf ALLE teksvelds in die JSON in Afrikaans — dit sluit in: overallVerdict, whatWasWritten, whatIsWrong, whatShouldBeWritten, industryExample, en alle strengths. Gebruik formele finansiële Afrikaans soos gebruik word in FAIS-nakomingsdokumente.`
+    : `LANGUAGE: Write all text fields in English.`;
+
+  const notAddressed = isAfrikaans ? "Nie aangespreek in die dokument nie" : "Not addressed in document";
+  const exampleVerdict = isAfrikaans
+    ? "Die KAR toon basiese advisdokumentasie maar ontbreek aan kritieke geskiktheidsregverdiging en risikobekendmaking soos vereis deur FAIS."
+    : "The CAR demonstrates basic advice documentation but lacks critical suitability justification and risk disclosure detail required under FAIS.";
+  const exampleShouldHave = isAfrikaans
+    ? "Gebaseer op die kliënt se maandelikse inkomste van R25 000, drie finansiële afhanklikes, bestaande begrafnisdekking van R50 000, en geen huidige lewensdekking nie, het die kliënt 'n geïdentifiseerde tekort van R2.1 miljoen. Die aanbevole Old Mutual Protect-plan teen R1.5 miljoen spreek die prioriteit lewensdekkingsbehoefte aan binne die kliënt se verklaarde bekostigbaarheid van R800/maand."
+    : "Based on the client monthly income of R25,000, three financial dependants, existing funeral cover of R50,000, and no current life cover, the client has an identified shortfall of R2.1 million. The recommended Old Mutual Protect Plan at R1.5 million addresses the priority life cover need within the client stated affordability of R800/month.";
+
   const prompt = `You are a senior FAIS compliance specialist at Fairbairn Consult evaluating a Client Advice Record (CAR) / Record of Advice (ROA).
+
+${langRule}
 
 DOCUMENT DETAILS:
 Representative: ${representativeName}
 Client: ${clientName}
+${knownMeta ? `\nPRE-FILLED DETAILS (user-entered; verify against the document):\n${knownMeta}` : ""}
 
 ${docSection}
 
@@ -402,36 +421,37 @@ Return ONLY valid JSON:
 {
   "extractedMeta": {
     "caseNumber": "extracted case/reference number or empty string",
-    "productType": "e.g. Life Cover, Retirement Annuity, Dread Disease",
+    "productType": "e.g. ${isAfrikaans ? "Lewensdekking, Aftree-annuïteit, Gevreesde Siekte" : "Life Cover, Retirement Annuity, Dread Disease"}",
     "policyNumber": "extracted policy number or empty string",
     "insurerName": "extracted insurer name or empty string",
     "adviceDate": "extracted date of advice or empty string"
   },
   "overallScore": 72,
-  "overallVerdict": "The CAR demonstrates basic advice documentation but lacks critical suitability justification and risk disclosure detail required under FAIS.",
+  "overallVerdict": "${exampleVerdict}",
   "strengths": [
-    "Client contact details are complete",
-    "Product details are clearly stated"
+    "${isAfrikaans ? "Kliënt se kontakbesonderhede is volledig" : "Client contact details are complete"}",
+    "${isAfrikaans ? "Produkbesonderhede is duidelik uiteengesit" : "Product details are clearly stated"}"
   ],
   "issues": [
     {
-      "category": "Suitability of Advice",
+      "category": "${isAfrikaans ? "Geskiktheid van Advies" : "Suitability of Advice"}",
       "severity": "HIGH",
-      "whatWasWritten": "Client needs life cover.",
-      "whatIsWrong": "Does not demonstrate how the product was matched to the client needs, income, dependants or existing cover. FAIS requires the adviser to justify WHY this specific product and benefit amount is suitable.",
-      "whatShouldBeWritten": "Based on the client monthly income of R25,000, three financial dependants, existing funeral cover of R50,000, and no current life cover, the client has an identified shortfall of R2.1 million. The recommended Old Mutual Protect Plan at R1.5 million addresses the priority life cover need within the client stated affordability of R800/month.",
-      "industryExample": "Client X earns R30,000/month net with two dependants. Client has no existing life cover. Based on the needs analysis a minimum cover of R1.8m is required. The recommended Momentum Myriad Policy provides R2m cover at R920/month which falls within the client stated budget of R1,000/month and directly addresses the identified shortfall."
+      "whatWasWritten": "${isAfrikaans ? "Kliënt benodig lewensdekking." : "Client needs life cover."}",
+      "whatIsWrong": "${isAfrikaans ? "Toon nie hoe die produk by die kliënt se behoeftes, inkomste, afhanklikes of bestaande dekking pas nie. FAIS vereis dat die adviseur HOEKOM hierdie spesifieke produk en voordeel geskik is, moet regverdig." : "Does not demonstrate how the product was matched to the client needs, income, dependants or existing cover. FAIS requires the adviser to justify WHY this specific product and benefit amount is suitable."}",
+      "whatShouldBeWritten": "${exampleShouldHave}",
+      "industryExample": "${isAfrikaans ? "Kliënt X verdien R30 000/maand netto met twee afhanklikes. Kliënt het geen bestaande lewensdekking nie. Gebaseer op die behoeftebepaling is 'n minimum dekking van R1.8m nodig. Die aanbevole Momentum Myriad-polis bied R2m dekking teen R920/maand wat binne die kliënt se verklaarde begroting van R1 000/maand val." : "Client X earns R30,000/month net with two dependants. Client has no existing life cover. Based on the needs analysis a minimum cover of R1.8m is required. The recommended Momentum Myriad Policy provides R2m cover at R920/month which falls within the client stated budget of R1,000/month and directly addresses the identified shortfall."}"
     }
   ]
 }
 
 Rules:
 - severity HIGH = regulatory breach risk, MEDIUM = best practice gap, LOW = minor improvement
-- whatWasWritten must be ACTUAL text from the document or state "Not addressed in document"
+- whatWasWritten must be ACTUAL text from the document or state "${notAddressed}"
 - industryExample must be realistic and detailed showing best practice
 - overallScore: 0-100 based on compliance quality
 - Only include real issues actually found in the document
-- Return ONLY the JSON with no markdown`;
+- Return ONLY the JSON with no markdown
+- ${langRule}`;
 
   const imageContent = (images || []).slice(0, 5).map((img) => ({
     type: "image_url",
@@ -443,11 +463,15 @@ Rules:
       ? [{ type: "text", text: prompt }, ...imageContent]
       : prompt;
 
+  const systemLangInstruction = isAfrikaans
+    ? " Reageer uitsluitlik in Afrikaans. Skryf alle teksvelds in die JSON in Afrikaans."
+    : " Respond in English.";
+
   const content = await callAzureOpenAI([
     {
       role: "system",
       content:
-        "You are a FAIS compliance specialist. Extract document details and evaluate Client Advice Records. Return ONLY valid JSON. Never return markdown or text outside the JSON.",
+        `You are a FAIS compliance specialist. Extract document details and evaluate Client Advice Records. Return ONLY valid JSON. Never return markdown or text outside the JSON.${systemLangInstruction}`,
     },
     { role: "user", content: userContent },
   ]);

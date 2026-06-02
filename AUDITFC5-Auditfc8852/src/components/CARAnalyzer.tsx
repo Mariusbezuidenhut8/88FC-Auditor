@@ -8,9 +8,18 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 (pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker;
 
+export interface CaseContext {
+  representativeName: string;
+  clientName: string;
+  policyNo: string;
+  insurerName: string;
+}
+
 interface CARAnalyzerProps {
   onBack: () => void;
+  onGoToAudit?: () => void;
   activeCodeId: string;
+  caseContext?: CaseContext;
 }
 
 interface CARMeta {
@@ -44,10 +53,39 @@ async function extractTextFromPdf(file: File): Promise<string> {
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
-    const strings = content.items.map((it: any) => it.str);
-    fullText += strings.join(" ") + "\n";
+    let pageText = "";
+    let prevItem: any = null;
+    for (const item of content.items as any[]) {
+      if (!item.str) continue;
+      if (prevItem) {
+        const prevY = prevItem.transform[5];
+        const currY = item.transform[5];
+        if (Math.abs(currY - prevY) > 3) {
+          pageText += "\n";
+        } else {
+          const prevEndX = prevItem.transform[4] + (prevItem.width || 0);
+          const gap = item.transform[4] - prevEndX;
+          if (gap > 1 && !pageText.endsWith(" ")) pageText += " ";
+        }
+      }
+      pageText += item.str;
+      prevItem = item;
+    }
+    fullText += pageText + "\n";
   }
   return fullText.trim();
+}
+
+function hasGoodSpacing(text: string): boolean {
+  if (text.length < 50) return true;
+  // Space ratio check — normal text is 10–20% whitespace
+  const spaceRatio = (text.match(/\s/g) || []).length / text.length;
+  if (spaceRatio < 0.10) return false;
+  // Average word-letter length > 8 means many words are merged (normal avg is ~5)
+  const words = text.split(/\s+/).filter(w => /[a-zA-Z]/.test(w));
+  if (words.length === 0) return true;
+  const avgLen = words.reduce((s, w) => s + w.replace(/[^a-zA-Z]/g, "").length, 0) / words.length;
+  return avgLen <= 8;
 }
 
 async function renderPdfToImages(file: File): Promise<Array<{ base64: string; mimeType: string }>> {
@@ -119,21 +157,33 @@ function extractJsonObject(text: string) {
 
 // ─────────────────────────────────────────────────────────────
 
-const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, activeCodeId }) => {
+const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, onGoToAudit, activeCodeId, caseContext }: CARAnalyzerProps) => {
   const [step, setStep] = useState<Step>("input");
   const [inputMethod, setInputMethod] = useState<"paste" | "upload">("paste");
 
   const [carText, setCarText] = useState("");
-  const [repName, setRepName] = useState("");
-  const [clientName, setClientName] = useState("");
+  const [repName, setRepName] = useState(caseContext?.representativeName ?? "");
+  const [clientName, setClientName] = useState(caseContext?.clientName ?? "");
 
   const [meta, setMeta] = useState<CARMeta>({
     caseNumber: "",
     productType: "",
-    policyNumber: "",
-    insurerName: "",
+    policyNumber: caseContext?.policyNo ?? "",
+    insurerName: caseContext?.insurerName ?? "",
     adviceDate: "",
   });
+
+  // Sync if a new case is selected while CARAnalyzer is already mounted
+  useEffect(() => {
+    if (!caseContext) return;
+    setRepName((prev: string) => prev || caseContext.representativeName);
+    setClientName((prev: string) => prev || caseContext.clientName);
+    setMeta((prev: CARMeta) => ({
+      ...prev,
+      policyNumber: prev.policyNumber || caseContext.policyNo,
+      insurerName: prev.insurerName || caseContext.insurerName,
+    }));
+  }, [caseContext]);
 
   const [analysis, setAnalysis] = useState<CARAnalysis | null>(null);
   const [history, setHistory] = useState<CARAnalysis[]>([]);
@@ -146,6 +196,7 @@ const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, activeCodeId }) => {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [fileList, setFileList] = useState<FileEntry[]>([]);
   const [uploadStatus, setUploadStatus] = useState<string>("");
+  const [analysisLang, setAnalysisLang] = useState<"en" | "af">("en");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -305,12 +356,12 @@ Return ONLY this JSON:
           } else if (file.type === "application/pdf") {
             setUploadStatus(`Extracting text from ${file.name}…`);
             const text = await extractTextFromPdf(file);
-            if (text.trim().length >= 200) {
+            if (text.trim().length >= 200 && hasGoodSpacing(text)) {
               newText += (newText ? "\n\n" : "") + text;
               processed.push({ name: file.name, status: "done", isImage: false });
             } else {
-              // Scanned PDF — render pages as images for Vision AI
-              setUploadStatus(`Rendering scanned pages from ${file.name}…`);
+              // Scanned or font-encoded PDF — render pages as images for Vision AI OCR
+              setUploadStatus(`Rendering pages via Vision AI for ${file.name}…`);
               const imgs = await renderPdfToImages(file);
               imgs.forEach((img) => newImages.push({ ...img, fileName: file.name }));
               processed.push({ name: file.name, status: "done", isImage: true });
@@ -386,7 +437,8 @@ Return ONLY this JSON:
         repName,
         clientName,
         meta,
-        uploadedImages.length > 0 ? uploadedImages : undefined
+        uploadedImages.length > 0 ? uploadedImages : undefined,
+        analysisLang
       );
       const fullAnalysis: CARAnalysis = {
         id: crypto.randomUUID(),
@@ -426,6 +478,168 @@ Return ONLY this JSON:
     setUploadedImages([]);
     setFileList([]);
     setError(null);
+  };
+
+  // ── Word (.docx) download ─────────────────────────────────────
+  const handleDownloadDocx = async () => {
+    if (!analysis) return;
+    setIsDownloading(true);
+    try {
+      const {
+        Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+        BorderStyle, TableRow, TableCell, Table, WidthType,
+      } = await import("docx");
+
+      const severityColour = { HIGH: "C0392B", MEDIUM: "D4860B", LOW: "2471A3" };
+      const gap = () => new Paragraph({ text: "" });
+      const ruled = () =>
+        new Paragraph({
+          border: { bottom: { color: "CCCCCC", style: BorderStyle.SINGLE, size: 6 } },
+          text: "",
+        });
+
+      const metaRow = (label: string, value: string) =>
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 30, type: WidthType.PERCENTAGE },
+              children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 20 })] })],
+            }),
+            new TableCell({
+              width: { size: 70, type: WidthType.PERCENTAGE },
+              children: [new Paragraph({ children: [new TextRun({ text: value || "—", size: 20 })] })],
+            }),
+          ],
+        });
+
+      const sectionHeading = (text: string) =>
+        new Paragraph({
+          heading: HeadingLevel.HEADING_2,
+          children: [new TextRun({ text, bold: true, color: "005F6B", size: 28 })],
+          spacing: { before: 240, after: 80 },
+        });
+
+      const labeledBlock = (label: string, value: string, highlight = false) => [
+        new Paragraph({
+          children: [new TextRun({ text: label, bold: true, size: 20, color: "444444" })],
+          spacing: { before: 120, after: 40 },
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: value || "(not provided)", size: 20, italics: !value })],
+          shading: highlight ? { fill: "FFF8E1" } : undefined,
+          border: {
+            left: { style: BorderStyle.SINGLE, size: 12, color: highlight ? "F59E0B" : "CCCCCC" },
+          },
+          indent: { left: 180 },
+          spacing: { after: 40 },
+        }),
+      ];
+
+      const issueBlocks = analysis.issues.flatMap((issue: CARIssue, idx: number) => [
+        gap(),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Issue ${idx + 1}  `, bold: true, size: 22 }),
+            new TextRun({
+              text: issue.severity + " RISK",
+              bold: true,
+              size: 20,
+              color: severityColour[issue.severity] || "444444",
+            }),
+            new TextRun({ text: `  —  ${issue.category}`, size: 22, bold: true }),
+          ],
+          spacing: { before: 80, after: 40 },
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: issue.whatIsWrong || "", size: 20, italics: true, color: "555555" })],
+          spacing: { after: 80 },
+        }),
+        ...labeledBlock("What Was Written:", issue.whatWasWritten),
+        ...labeledBlock("What Should Have Been Written:", issue.whatShouldBeWritten, true),
+        ...(issue.industryExample
+          ? labeledBlock("Industry Example / Best Practice:", issue.industryExample)
+          : []),
+        ruled(),
+      ]);
+
+      const doc = new Document({
+        styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
+        sections: [
+          {
+            children: [
+              new Paragraph({
+                heading: HeadingLevel.TITLE,
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "CAR/ROA Compliance Analysis", bold: true, size: 48, color: "005F6B" })],
+              }),
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: `Generated ${new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}`, size: 20, color: "888888" })],
+                spacing: { after: 240 },
+              }),
+
+              sectionHeading("Case Details"),
+              new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                rows: [
+                  metaRow("Representative", analysis.representativeName),
+                  metaRow("Client", analysis.clientName),
+                  metaRow("Policy Number", analysis.policyNumber),
+                  metaRow("Insurer", analysis.insurerName),
+                  metaRow("Product Type", analysis.productType),
+                  metaRow("Advice Date", analysis.adviceDate),
+                  metaRow("Case Number", analysis.caseNumber),
+                  metaRow("Analysis Date", new Date(analysis.submittedAt).toLocaleDateString("en-ZA")),
+                ],
+              }),
+
+              gap(),
+              sectionHeading(`Compliance Score: ${analysis.overallScore}%`),
+              new Paragraph({
+                children: [new TextRun({ text: analysis.overallVerdict || "", size: 22 })],
+                spacing: { after: 120 },
+              }),
+
+              sectionHeading(`Issues Found (${analysis.issues.length})`),
+              ...issueBlocks,
+
+              ...(analysis.strengths?.length
+                ? [
+                    gap(),
+                    sectionHeading("Strengths Identified"),
+                    ...analysis.strengths.map(
+                      (s) =>
+                        new Paragraph({
+                          bullet: { level: 0 },
+                          children: [new TextRun({ text: s, size: 20 })],
+                          spacing: { after: 60 },
+                        })
+                    ),
+                  ]
+                : []),
+            ],
+          },
+        ],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const name = [analysis.representativeName, analysis.clientName, analysis.policyNumber]
+        .filter(Boolean)
+        .join("_")
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9_\-]/g, "");
+      a.download = `CAR_Analysis_${name || "report"}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Word export failed:", e);
+      alert("Word export failed. Please use the PDF download instead.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // ── PDF download ──────────────────────────────────────────────
@@ -503,6 +717,70 @@ Return ONLY this JSON:
         </div>
       </div>
 
+      {/* Active case banner — shown on every step */}
+      {caseContext ? (
+        <div className="bg-[#005f6b] rounded-2xl px-6 py-4 text-white flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-white/15 rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Analyzing Case</p>
+              <p className="font-bold text-white text-sm">
+                {caseContext.representativeName}
+                <span className="font-normal text-white/60 mx-2">→</span>
+                {caseContext.clientName}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-white/75">
+            {caseContext.insurerName && <span>{caseContext.insurerName}</span>}
+            {caseContext.policyNo && (
+              <span className="px-2.5 py-0.5 bg-white/15 text-white text-xs rounded-full font-mono border border-white/20">
+                {caseContext.policyNo}
+              </span>
+            )}
+            {onGoToAudit && (
+              <button
+                type="button"
+                onClick={onGoToAudit}
+                className="text-xs font-bold text-white/70 hover:text-white underline underline-offset-2 transition-colors"
+              >
+                Change case
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 flex items-start gap-4">
+          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="font-bold text-amber-900">No Audit Case Selected</h3>
+            <p className="text-amber-700 text-sm mt-1">
+              Open the Audit Form and select a case from the Excel import first. The selected case will automatically link here so you can analyze its CAR/ROA document in context.
+            </p>
+            {onGoToAudit && (
+              <button
+                type="button"
+                onClick={onGoToAudit}
+                className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-xl transition-colors"
+              >
+                Go to Audit Form
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* HISTORY */}
       {step === "history" && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
@@ -571,7 +849,29 @@ Return ONLY this JSON:
         <div className="space-y-6">
           {/* Document details */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Document Details</h2>
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Document Details</h2>
+              {/* Language selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Analysis language:</span>
+                <div className="flex rounded-xl overflow-hidden border border-slate-200">
+                  {([ ["en", "English"], ["af", "Afrikaans"] ] as const).map(([code, label]) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setAnalysisLang(code)}
+                      className={`px-4 py-1.5 text-xs font-bold transition-colors ${
+                        analysisLang === code
+                          ? "bg-[#005f6b] text-white"
+                          : "bg-white text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
@@ -808,9 +1108,20 @@ Return ONLY this JSON:
             <button
               onClick={handleDownloadPdf}
               disabled={isDownloading}
-              className="px-6 py-2.5 bg-[#005f6b] text-white font-bold rounded-xl hover:bg-[#004b54]"
+              className="px-6 py-2.5 bg-[#005f6b] text-white font-bold rounded-xl hover:bg-[#004b54] disabled:opacity-60"
             >
               {isDownloading ? "Generating…" : "Download PDF"}
+            </button>
+            <button
+              onClick={handleDownloadDocx}
+              disabled={isDownloading}
+              className="px-6 py-2.5 bg-blue-700 text-white font-bold rounded-xl hover:bg-blue-800 disabled:opacity-60 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                <path d="M14 2v6h6M8 13h8M8 17h5"/>
+              </svg>
+              {isDownloading ? "Generating…" : "Download Word (.docx)"}
             </button>
             <button
               onClick={resetInput}

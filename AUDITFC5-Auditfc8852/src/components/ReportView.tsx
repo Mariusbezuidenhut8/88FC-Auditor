@@ -115,7 +115,7 @@ Policy No: ${report.metadata.policyNo}
 Compliance Score: ${complianceScore}%
 
 EXECUTIVE SUMMARY:
-${aiSummary || "Analysis pending..."}
+${(aiSummary || "Analysis pending.").replace(/\*\*/g, "").replace(/---/g, "---").trim()}
 
 ${isFollowUp ? 'OUTSTANDING ' : ''}REMEDIAL ACTION PLAN:
 ${actionsText}
@@ -268,65 +268,100 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
       </div>
 
       {/* Capture Area for PDF Generation */}
-      <div id="report-capture-area" className="space-y-10 bg-white md:bg-transparent rounded-3xl overflow-hidden p-2">
-        <div className="hidden print:block mb-8 border-b-2 border-slate-900 pb-4">
-          <div className="flex justify-between items-end">
+      <div id="report-capture-area" className="space-y-8 bg-white rounded-2xl overflow-hidden p-2">
+
+        {/* FC-branded report header */}
+        <div className="rounded-2xl overflow-hidden" style={{ background: "#1a2e4a" }}>
+          <div className="px-8 py-6 flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-3xl font-black text-slate-900">FAIRBAIRN COMPLIANCE AUDIT</h1>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">
-                Audit Reference: FC-AUDIT-{report.id.split('-').pop()?.toUpperCase()}
+              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "6px" }}>
+                Old Mutual Wealth · Mandated Brokerage
+              </p>
+              <h1 style={{ color: "#fff", fontSize: "22px", fontWeight: 700, letterSpacing: "0.01em" }}>
+                FAIRBAIRN <span style={{ fontWeight: 300 }}>CONSULT</span>
+              </h1>
+              <div style={{ display: "flex", height: "4px", width: "160px", borderRadius: "99px", overflow: "hidden", marginTop: "10px" }}>
+                {(["#e8424b","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899"] as const).map((c, i) =>
+                  <span key={i} style={{ flex: 1, background: c }} />
+                )}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>
+                Compliance Audit Report
+              </p>
+              <p style={{ color: "#fff", fontSize: "18px", fontWeight: 600 }}>{report.metadata.representativeName}</p>
+              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "12px", marginTop: "4px" }}>
+                {report.metadata.clientName} · {formatDate(report.metadata.reviewDate)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs font-black text-slate-400 uppercase">Generated On</p>
-              <p className="text-sm font-bold">{new Date().toLocaleDateString()}</p>
-            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "32px", padding: "12px 32px 16px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            {[
+              { label: "Compliance Score", value: `${complianceScore}%`, color: statusColor },
+              { label: "Remedial Actions", value: String(report.remedialActions.length), color: "#fff" },
+              { label: "Policy Number", value: report.metadata.policyNo || "—", color: "#fff" },
+              { label: "Audited By", value: report.metadata.managerName || "—", color: "rgba(255,255,255,0.7)" },
+            ].map(({ label, value, color }) => (
+              <div key={label}>
+                <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.07em", color: "rgba(255,255,255,0.35)" }}>{label}</div>
+                <div style={{ fontSize: "15px", fontWeight: 600, color, marginTop: "2px" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", height: "5px" }}>
+            {(["#e8424b","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899"] as const).map((c, i) =>
+              <span key={i} style={{ flex: 1, background: c }} />
+            )}
           </div>
         </div>
 
-        {/* AI Summary Section */}
-        <div className="bg-slate-900 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl relative overflow-hidden print:rounded-3xl print:p-8 print:shadow-none">
-          <div className="flex items-center gap-2 mb-4">
-            <svg className="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* AI Summary */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6">
+          <div className="flex items-center gap-2 mb-5" style={{ borderBottom: "1px solid #e8eff8", paddingBottom: "12px" }}>
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="#1a2e4a" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <h3 className="text-sm font-black uppercase tracking-[0.3em] text-teal-400">
-              Auditor's AI Summary
+            <h3 style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#1a2e4a" }}>
+              AI Compliance Summary
             </h3>
           </div>
-          
           {isSummarizing ? (
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <div className="flex items-center gap-3 text-slate-400">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <span className="text-teal-200">Generating AI analysis...</span>
+              <span className="text-sm">Generating analysis…</span>
             </div>
           ) : (
-            <p className="text-base md:text-lg font-medium leading-relaxed whitespace-pre-wrap">
-              {aiSummary || "AI summary unavailable"}
-            </p>
+            <div className="text-sm leading-relaxed" style={{ color: "#4b5563" }}>
+              {(aiSummary || "Summary unavailable.")
+                .replace(/\*\*/g, "")
+                .split("\n")
+                .map((line, i) => {
+                  const t = line.trim();
+                  if (t === "---") return <hr key={i} style={{ border: "none", borderTop: "1px solid #e8eff8", margin: "12px 0" }} />;
+                  if (t.endsWith(":") && t.length < 40) return <p key={i} style={{ fontWeight: 600, color: "#1a2e4a", marginTop: "10px" }}>{t}</p>;
+                  if (t.startsWith("- ")) return <p key={i} style={{ paddingLeft: "1em", textIndent: "-0.75em" }}>• {t.slice(2)}</p>;
+                  if (!t) return <div key={i} style={{ height: "4px" }} />;
+                  return <p key={i}>{t}</p>;
+                })}
+            </div>
           )}
-          
-          <div className="absolute top-0 right-0 p-8 opacity-10">
-            <svg className="w-24 h-24" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
-          </div>
         </div>
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Review Context */}
-          <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100 print:shadow-none print:border-slate-200">
-            <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+            <h3 className="text-sm font-semibold mb-6 flex items-center gap-2" style={{ color: "#1a2e4a", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              <svg className="w-4 h-4" fill="none" stroke="#1a2e4a" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
               </svg>
-              Review Context
+              Case Details
             </h3>
-            <div className="space-y-5">
+            <div className="space-y-4">
               {[
                 { label: 'Representative', value: report.metadata.representativeName },
                 { label: 'Client', value: report.metadata.clientName },
@@ -335,11 +370,11 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
                 { label: 'Audited By', value: report.metadata.managerName },
                 { label: 'Audit Date', value: formatDate(report.metadata.reviewDate) }
               ].map((meta, i) => (
-                <div key={i} className="flex flex-col border-l-2 border-slate-100 pl-4 py-1">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1.5">
+                <div key={i} className="flex flex-col pl-4 py-1" style={{ borderLeft: "2px solid #e8eff8" }}>
+                  <span style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>
                     {meta.label}
                   </span>
-                  <span className="font-extrabold text-slate-700 leading-tight">
+                  <span style={{ fontWeight: 600, color: "#1a2e4a" }}>
                     {meta.value || 'N/A'}
                   </span>
                 </div>
@@ -493,18 +528,21 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
           </div>
         </div>
 
-        {/* Footer for PDF */}
-        <div className="hidden print:block mt-12 pt-8 border-t border-slate-200 text-center">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
-            Confidential - Fairbairn Consult Internal Audit Record
-          </p>
-          <div className="flex justify-center gap-6 mt-2">
-            <span className="text-[9px] text-slate-300 font-bold italic">
-              Powered by Azure AI
-            </span>
-            <span className="text-[9px] text-slate-300 font-bold italic">
-              Report ID: {report.id.split('-').pop()?.toUpperCase()}
-            </span>
+        {/* FC-branded PDF footer */}
+        <div className="mt-4 pt-5 flex items-center justify-between flex-wrap gap-4" style={{ borderTop: "1px solid #e8eff8" }}>
+          <div>
+            <p style={{ fontSize: "11px", fontWeight: 600, color: "#1a2e4a" }}>
+              FAIRBAIRN <span style={{ fontWeight: 300 }}>CONSULT</span>
+              <span style={{ fontWeight: 400, color: "#9ca3af", marginLeft: "8px" }}>· Old Mutual Wealth · Mandated Brokerage</span>
+            </p>
+            <p style={{ fontSize: "10px", color: "#9ca3af", marginTop: "3px" }}>
+              Confidential – Internal Compliance Audit Record · FC-AUDIT-{report.id.split('-').pop()?.toUpperCase()}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "0", height: "3px", width: "60px", borderRadius: "99px", overflow: "hidden" }}>
+            {(["#e8424b","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899"] as const).map((c, i) =>
+              <span key={i} style={{ flex: 1, background: c }} />
+            )}
           </div>
         </div>
       </div>

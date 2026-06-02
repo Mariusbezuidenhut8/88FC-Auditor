@@ -69,15 +69,6 @@ export interface CARIssue {
   industryExample: string;
 }
 
-export interface CARIssue {
-  category: string;
-  severity: "HIGH" | "MEDIUM" | "LOW";
-  whatWasWritten: string;
-  whatIsWrong: string;
-  whatShouldBeWritten: string;
-  industryExample: string;
-}
-
 export interface CARAnalysis {
   id: string;
   representativeName: string;
