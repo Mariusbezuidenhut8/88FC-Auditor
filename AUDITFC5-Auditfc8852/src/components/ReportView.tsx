@@ -126,8 +126,162 @@ Regards,
 Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Oversight' : ''}`;
   };
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(generateEmailBody());
+  const generateHtmlEmailBody = () => {
+    const unresolvedActions = report.remedialActions.filter(a => a.status === "PENDING");
+    const isFollowUp = !!(report.iteration && report.iteration > 1);
+    const refId = report.id.split("-").pop()?.toUpperCase();
+    const scoreCol = complianceScore >= 90 ? "#065f46" : complianceScore >= 70 ? "#78350f" : "#7f1d1d";
+    const scoreBg  = complianceScore >= 90 ? "#ecfdf5" : complianceScore >= 70 ? "#fffbeb" : "#fef2f2";
+    const scoreBdr = complianceScore >= 90 ? "#10b981" : complianceScore >= 70 ? "#f59e0b" : "#e8424b";
+    const FONT = "Calibri, Arial, 'Helvetica Neue', sans-serif";
+    const cleanSummary = (aiSummary || "Summary not yet available.")
+      .replace(/\*\*/g, "")
+      .split("\n")
+      .map(l => {
+        const t = l.trim();
+        if (!t) return "";
+        if (t === "---") return `<hr style="border:none;border-top:1px solid #e8eff8;margin:10px 0;">`;
+        if (t.endsWith(":") && t.length < 40) return `<p style="margin:8px 0 2px;font-weight:bold;color:#1a2e4a;font-size:11pt;">${t}</p>`;
+        if (t.startsWith("- ")) return `<p style="margin:2px 0 2px 12px;color:#374151;font-size:11pt;">&bull;&nbsp;${t.slice(2)}</p>`;
+        return `<p style="margin:3px 0;color:#374151;font-size:11pt;line-height:1.55;">${t}</p>`;
+      })
+      .join("");
+
+    const metaRows = [
+      ["Representative", report.metadata.representativeName],
+      ["Client",         report.metadata.clientName],
+      ["Policy Number",  report.metadata.policyNo || "—"],
+      ["Insurer",        report.metadata.insurerName || "—"],
+      ["Audited By",     report.metadata.managerName || "—"],
+      ["Audit Date",     isFollowUp
+        ? `Follow-up ${report.iteration! - 1} &bull; Original: ${formatDate(report.createdAt?.split("T")[0])}`
+        : formatDate(report.metadata.reviewDate)],
+      ["Audit Reference", `FC-AUDIT-${refId}`],
+    ].map(([label, value]) => `
+      <tr>
+        <td style="padding:7px 12px 7px 0;font-family:${FONT};font-size:9pt;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e8eff8;width:38%;vertical-align:top;">${label}</td>
+        <td style="padding:7px 0;font-family:${FONT};font-size:11pt;font-weight:600;color:#1a2e4a;border-bottom:1px solid #e8eff8;">${value}</td>
+      </tr>`).join("");
+
+    const actionRows = unresolvedActions.length === 0
+      ? `<p style="font-family:${FONT};font-size:11pt;color:#065f46;margin:0;">All remedial actions have been resolved.</p>`
+      : unresolvedActions.map((a, i) => `
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+          <tr>
+            <td style="width:28px;vertical-align:top;padding-top:2px;">
+              <span style="display:inline-block;width:22px;height:22px;background:#1a2e4a;border-radius:50%;text-align:center;line-height:22px;font-family:${FONT};font-size:9pt;font-weight:bold;color:#ffffff;">${i + 1}</span>
+            </td>
+            <td style="font-family:${FONT};font-size:11pt;color:#374151;line-height:1.5;padding-left:8px;">
+              ${a.description}
+              ${a.dueDate ? `<br><span style="font-size:9pt;color:#e8424b;font-weight:bold;">Due: ${formatDate(a.dueDate)}</span>` : ""}
+            </td>
+          </tr>
+        </table>`).join("");
+
+    const rainbowTable = `<table cellpadding="0" cellspacing="0" style="width:140px;height:3px;margin-top:10px;border-radius:99px;overflow:hidden;">
+      <tr>
+        <td style="background:#e8424b;height:3px;"></td>
+        <td style="background:#f59e0b;height:3px;"></td>
+        <td style="background:#10b981;height:3px;"></td>
+        <td style="background:#3b82f6;height:3px;"></td>
+        <td style="background:#8b5cf6;height:3px;"></td>
+        <td style="background:#ec4899;height:3px;"></td>
+      </tr>
+    </table>`;
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#ffffff;">
+<div style="max-width:640px;padding:32px 24px;font-family:${FONT};font-size:11pt;color:#111827;">
+
+  <!-- FC branded header -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a2e4a;border-radius:10px;margin-bottom:28px;">
+    <tr><td style="padding:22px 28px;">
+      <span style="font-family:${FONT};font-size:20pt;font-weight:bold;color:#ffffff;letter-spacing:1px;">FAIRBAIRN</span><span style="font-family:${FONT};font-size:20pt;font-weight:300;color:#ffffff;"> CONSULT</span>
+      <div style="font-family:${FONT};font-size:8pt;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:2px;margin-top:4px;">Old Mutual Wealth &middot; Mandated Brokerage</div>
+      ${rainbowTable}
+    </td></tr>
+  </table>
+
+  <!-- Report title -->
+  <p style="font-family:${FONT};font-size:15pt;font-weight:bold;color:#1a2e4a;margin:0 0 4px 0;">Compliance Audit Report</p>
+  <p style="font-family:${FONT};font-size:10pt;color:#9ca3af;margin:0 0 24px 0;">FC-AUDIT-${refId} &middot; ${formatDate(report.metadata.reviewDate)}${isFollowUp ? ` &middot; <strong style="color:#f59e0b;">Follow-Up ${report.iteration! - 1}</strong>` : ""}</p>
+
+  ${isFollowUp ? `
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;border-radius:8px;overflow:hidden;background:#fffbeb;border-left:4px solid #f59e0b;">
+    <tr><td style="padding:12px 16px;font-family:${FONT};font-size:11pt;color:#78350f;">
+      <strong>Follow-Up Notice ${report.iteration! - 1}:</strong> This is the ${report.iteration === 2 ? "second" : "third"} review of outstanding remedial actions. ${unresolvedActions.length} action(s) remain unresolved and require immediate attention.
+    </td></tr>
+  </table>` : ""}
+
+  <!-- Case details -->
+  <p style="font-family:${FONT};font-size:9pt;font-weight:bold;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px 0;">Case Details</p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">${metaRows}</table>
+
+  <!-- Score -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;background:${scoreBg};border-radius:8px;border-left:4px solid ${scoreBdr};">
+    <tr><td style="padding:14px 20px;">
+      <span style="font-family:${FONT};font-size:9pt;font-weight:bold;color:${scoreCol};text-transform:uppercase;letter-spacing:1px;">Compliance Score</span>
+      <span style="font-family:${FONT};font-size:26pt;font-weight:bold;color:${scoreBdr};margin-left:14px;">${complianceScore}%</span>
+    </td></tr>
+  </table>
+
+  <!-- Summary -->
+  <p style="font-family:${FONT};font-size:9pt;font-weight:bold;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px 0;">Executive Summary</p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;background:#e8eff8;border-radius:0 8px 8px 0;border-left:4px solid #1a2e4a;">
+    <tr><td style="padding:16px 20px;">${cleanSummary}</td></tr>
+  </table>
+
+  <!-- Remedial actions -->
+  <p style="font-family:${FONT};font-size:9pt;font-weight:bold;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin:0 0 12px 0;">${isFollowUp ? "Outstanding " : ""}Remedial Action Plan</p>
+  <div style="margin-bottom:32px;">${actionRows}</div>
+
+  ${isFollowUp ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border-radius:8px;overflow:hidden;background:#fef2f2;border-left:4px solid #e8424b;"><tr><td style="padding:12px 16px;font-family:${FONT};font-size:11pt;color:#7f1d1d;">This is a formal follow-up notice. Continued non-compliance may result in escalation to senior management and potential regulatory implications.</td></tr></table>` : ""}
+
+  <!-- Sign-off -->
+  <p style="font-family:${FONT};font-size:11pt;color:#374151;margin:0 0 4px 0;">Regards,</p>
+  <p style="font-family:${FONT};font-size:11pt;font-weight:bold;color:#1a2e4a;margin:0 0 28px 0;">Fairbairn Consult Compliance Team${isFollowUp ? "<br><span style='font-size:10pt;color:#6b7280;font-weight:normal;'>CC: Zein &mdash; Compliance Oversight</span>" : ""}</p>
+
+  <!-- FC signature block (matching Guy's style) -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb;padding-top:20px;">
+    <tr>
+      <td style="vertical-align:middle;padding-right:20px;border-right:1px solid #e5e7eb;width:160px;">
+        <span style="font-family:${FONT};font-size:14pt;font-weight:bold;color:#1a2e4a;">FAIRBAIRN</span><span style="font-family:${FONT};font-size:14pt;font-weight:300;color:#1a2e4a;"> CONSULT</span>
+        <div style="font-family:${FONT};font-size:7pt;color:#9ca3af;text-transform:uppercase;letter-spacing:1.5px;margin-top:3px;">Wealth creation and protection</div>
+        <table cellpadding="0" cellspacing="0" style="margin-top:6px;width:120px;height:3px;">
+          <tr>
+            <td style="background:#e8424b;height:3px;"></td><td style="background:#f59e0b;height:3px;"></td>
+            <td style="background:#10b981;height:3px;"></td><td style="background:#3b82f6;height:3px;"></td>
+            <td style="background:#8b5cf6;height:3px;"></td><td style="background:#ec4899;height:3px;"></td>
+          </tr>
+        </table>
+      </td>
+      <td style="vertical-align:middle;padding-left:20px;">
+        <p style="font-family:${FONT};font-size:9pt;color:#6b7280;margin:0;">A member of the Old Mutual Group</p>
+        <p style="font-family:${FONT};font-size:8pt;color:#9ca3af;margin:3px 0 0 0;">Licensed Financial Services Provider</p>
+      </td>
+    </tr>
+  </table>
+
+</div></body></html>`;
+  };
+
+  const handleCopyEmail = async () => {
+    const html = generateHtmlEmailBody();
+    const plain = generateEmailBody();
+    try {
+      if (typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html":  new Blob([html],  { type: "text/html" }),
+            "text/plain": new Blob([plain], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(plain);
+      }
+    } catch {
+      await navigator.clipboard.writeText(plain);
+    }
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 2000);
   };
