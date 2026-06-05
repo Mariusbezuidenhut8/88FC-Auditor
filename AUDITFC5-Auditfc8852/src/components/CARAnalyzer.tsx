@@ -680,7 +680,7 @@ Return ONLY this JSON:
     }
   };
 
-  const scoreColor = (s: number) => (s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : "#ef4444");
+  const scoreColor = (s: number) => (s >= 90 ? "#10b981" : s >= 70 ? "#f59e0b" : "#ef4444");
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 

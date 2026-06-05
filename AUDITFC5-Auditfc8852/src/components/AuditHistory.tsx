@@ -323,7 +323,7 @@ const AuditHistory: React.FC<AuditHistoryProps> = ({
                         <div className="text-xs text-slate-400 font-mono">{report.metadata.policyNo}</div>
                       </td>
                       <td className="p-5 text-center">
-                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-black ${score >= 90 ? 'bg-emerald-100 text-emerald-700' : score >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-black ${score >= 90 ? 'bg-emerald-100 text-emerald-700' : score >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
                           {score}%
                         </span>
                       </td>

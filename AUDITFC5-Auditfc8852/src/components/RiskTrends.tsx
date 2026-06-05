@@ -25,8 +25,8 @@ function gapBarColor(pct: number) {
 }
 
 function scoreColor(s: number) {
-  if (s >= 80) return FC.emerald;
-  if (s >= 60) return FC.amber;
+  if (s >= 90) return FC.emerald;
+  if (s >= 70) return FC.amber;
   return FC.coral;
 }
 
@@ -101,7 +101,7 @@ export default function RiskTrends({ reports, onStartAudit }: Props) {
     const remedialOpen = reports.reduce(
       (s, r) => s + r.remedialActions.filter(a => a.status === "PENDING").length, 0
     );
-    const highRisk = filtered.filter(r => r.score < 60).length;
+    const highRisk = filtered.filter(r => r.score < 70).length;
     return [
       { label: "Due this quarter", value: dueThisQuarter, color: FC.coral,   note: "all-time" },
       { label: "Completed",        value: completed,       color: FC.emerald, note: periodLabel },
@@ -131,10 +131,9 @@ export default function RiskTrends({ reports, onStartAudit }: Props) {
   // ── Score distribution ───────────────────────────────────────────
   const distribution = useMemo(() => {
     const bands = [
-      { label: "Excellent (90–100%)", min: 90, max: 100, color: FC.emerald },
-      { label: "Good (75–89%)",       min: 75, max: 89,  color: "#34d399"  },
-      { label: "Fair (60–74%)",       min: 60, max: 74,  color: FC.amber   },
-      { label: "Poor (<60%)",         min: 0,  max: 59,  color: FC.coral   },
+      { label: "Green — Excellent (≥90%)",    min: 90, max: 100, color: FC.emerald },
+      { label: "Amber — Satisfactory (70–89%)", min: 70, max: 89,  color: FC.amber   },
+      { label: "Red — Poor (<70%)",           min: 0,  max: 69,  color: FC.coral   },
     ];
     return bands.map(b => ({
       ...b,
@@ -235,7 +234,7 @@ export default function RiskTrends({ reports, onStartAudit }: Props) {
               children: [
                 new TextRun({ text: r.name, bold: true, size: 22 }),
                 new TextRun({ text: `   ${r.score}%`, bold: true, size: 22,
-                  color: r.score >= 80 ? "10B981" : r.score >= 60 ? "F59E0B" : "E8424B" }),
+                  color: r.score >= 90 ? "10B981" : r.score >= 70 ? "F59E0B" : "E8424B" }),
                 new TextRun({ text: `   Last audited ${fmtDate(r.lastAudit)}`, size: 18, color: "888888" }),
               ],
             })
