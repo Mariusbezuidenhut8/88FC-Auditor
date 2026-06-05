@@ -376,8 +376,10 @@ export const evaluateCAR = async (
 
   const isAfrikaans = language === "af";
 
-  const docSection = carText.trim()
-    ? `CLIENT ADVICE RECORD TEXT:\n"""\n${carText}\n"""`
+  // Truncate to 4500 chars to stay within safe token limits alongside image payloads
+  const safeCarText = carText.trim().slice(0, 4500);
+  const docSection = safeCarText
+    ? `CLIENT ADVICE RECORD TEXT:\n"""\n${safeCarText}\n"""`
     : `CLIENT ADVICE RECORD: See attached document images below.`;
 
   const knownMeta = meta && Object.values(meta).some(Boolean)

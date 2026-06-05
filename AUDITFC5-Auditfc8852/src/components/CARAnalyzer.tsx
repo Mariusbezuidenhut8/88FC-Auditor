@@ -95,14 +95,14 @@ async function renderPdfToImages(file: File): Promise<Array<{ base64: string; mi
   const images: Array<{ base64: string; mimeType: string }> = [];
   for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
-    // Scale 1.0 keeps file sizes small enough for the API
-    const viewport = page.getViewport({ scale: 1.0 });
+    // Scale 0.75 keeps payload well under the 6 MB Netlify function body limit
+    const viewport = page.getViewport({ scale: 0.75 });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
     images.push({
-      base64: canvas.toDataURL("image/jpeg", 0.7).split(",")[1],
+      base64: canvas.toDataURL("image/jpeg", 0.65).split(",")[1],
       mimeType: "image/jpeg",
     });
   }
@@ -117,14 +117,14 @@ async function fileToBase64AndCompress(file: File): Promise<{ base64: string; mi
       const orig64 = dataUrl.split(",")[1];
       const img = new Image();
       img.onload = () => {
-        const maxDim = 1200;
+        const maxDim = 900;
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const canvas = document.createElement("canvas");
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
         canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
         resolve({
-          base64: canvas.toDataURL("image/jpeg", 0.8).split(",")[1],
+          base64: canvas.toDataURL("image/jpeg", 0.65).split(",")[1],
           mimeType: "image/jpeg",
         });
       };
@@ -424,6 +424,8 @@ Return ONLY this JSON:
   }, [carText, repName, clientName, isExtracting, hasSomeMeta, uploadedImages]);
 
   // ── Submit for analysis ───────────────────────────────────────
+  const MAX_IMAGE_BYTES = 3_000_000; // 3 MB base64 limit — well under Netlify's 6 MB body limit
+
   const handleAnalyze = async () => {
     if (!canAnalyze) {
       setError("Please complete the required info and wait for extraction to finish.");
@@ -432,12 +434,23 @@ Return ONLY this JSON:
     setError(null);
     setStep("analyzing");
     try {
+      // Size gate: if images exceed 3 MB combined, drop them and use text-only path
+      let imagesToSend: typeof uploadedImages | undefined = uploadedImages.length > 0 ? uploadedImages : undefined;
+      if (imagesToSend) {
+        const totalBytes = imagesToSend.reduce((n, img) => n + img.base64.length, 0);
+        if (totalBytes > MAX_IMAGE_BYTES) {
+          console.warn(`Image payload ${(totalBytes / 1_000_000).toFixed(1)} MB exceeds limit — falling back to text-only analysis.`);
+          setError("Images are too large for a single request — analysing from extracted text only. Results may vary for scanned documents.");
+          imagesToSend = undefined;
+        }
+      }
+
       const result = await evaluateCAR(
         carText,
         repName,
         clientName,
         meta,
-        uploadedImages.length > 0 ? uploadedImages : undefined,
+        imagesToSend,
         analysisLang
       );
       const fullAnalysis: CARAnalysis = {
@@ -450,7 +463,7 @@ Return ONLY this JSON:
         insurerName: result.extractedMeta?.insurerName || meta.insurerName || "",
         adviceDate: result.extractedMeta?.adviceDate || meta.adviceDate || "",
         submittedAt: new Date().toISOString(),
-        carText,
+        carText: "",  // never persist raw document text — keeps localStorage lean
         overallScore: result.overallScore ?? 0,
         overallVerdict: result.overallVerdict ?? "Analysis complete.",
         issues: result.issues ?? [],

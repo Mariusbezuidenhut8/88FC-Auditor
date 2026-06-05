@@ -70,7 +70,7 @@ export const handler: Handler = async (event) => {
       body: JSON.stringify({
         messages: payload.messages,
         temperature: 0.2,
-        // max_tokens: 300, // optional
+        max_tokens: 2000,
       }),
       signal: controller.signal,
     });
