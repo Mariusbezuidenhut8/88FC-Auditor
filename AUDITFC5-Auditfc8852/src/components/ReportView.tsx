@@ -473,8 +473,36 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
           </div>
         </div>
 
+        {/* CONFIDENTIAL banner — always visible in PDF */}
+        <div style={{
+          background: "#f8f4e8",
+          border: "1px solid #e5d9b6",
+          borderRadius: "10px",
+          padding: "8px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "10px",
+        }}>
+          <svg width="14" height="14" fill="none" stroke="#92742a" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+          <span style={{
+            fontSize: "11px",
+            fontWeight: 700,
+            color: "#92742a",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+          }}>
+            CONFIDENTIAL — Internal Use Only — Not for Distribution
+          </span>
+          <svg width="14" height="14" fill="none" stroke="#92742a" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+
         {/* AI Summary */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
           <div className="flex items-center gap-2 mb-5" style={{ borderBottom: "1px solid #e8eff8", paddingBottom: "12px" }}>
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="#1a2e4a" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -511,7 +539,7 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Review Context */}
-          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
             <h3 className="text-sm font-semibold mb-6 flex items-center gap-2" style={{ color: "#1a2e4a", textTransform: "uppercase", letterSpacing: "0.07em" }}>
               <svg className="w-4 h-4" fill="none" stroke="#1a2e4a" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -565,6 +593,7 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
                 report.remedialActions.map((action, index) => (
                   <div
                     key={action.id}
+                    style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
                     className={`p-5 rounded-[2rem] border transition-all ${
                       action.status === 'RESOLVED'
                         ? 'bg-emerald-50/20 opacity-60 border-emerald-100'
