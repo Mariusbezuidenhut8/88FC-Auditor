@@ -9,90 +9,83 @@ export type ChecklistItem = {
 export const CHECKLIST_ITEMS: ChecklistItem[] = [
   {
     id: "contact_disclosure",
-    text: "Contact Stage Disclosures made?",
-    subtitle: "Adviser licensed and accredited, signed disclosure letter",
+    text: "Contact Stage Disclosures made",
+    subtitle: "Client signed copy, is adviser licenced and accredited to sell product?",
   },
   {
     id: "client_authority",
-    text: "Client Authority / Brokers Note on file?",
-    subtitle: "Mandate or broker appointment note",
+    text: "Client Authority / Brokers Note on file.",
   },
-
-  // --- Items you pasted (converted from label/description to text/subtitle) ---
   {
     id: "fica_id",
-    text: "FICA - Client ID/Verification docs?",
-    subtitle: "Certified ID, registration, utility bills",
+    text: "If transaction falls within ambit of FICA - client identification and verification documents.",
+    subtitle: "Copy of ID document / registration docs / utility bill / Beeswax reports",
   },
   {
     id: "fica_dd",
-    text: "FICA - Addendum/Due Diligence?",
-    subtitle: "Enhanced due diligence or FICA addendum",
+    text: "FICA Documentation",
+    subtitle: "FICA Addendum / Transactional due diligence / Beeswax reports",
   },
   {
     id: "popi",
-    text: "POPI Consent form?",
-    subtitle: "Protection of Personal Information Act compliance",
+    text: "POPI Consent form",
   },
   {
     id: "policy_schedule",
-    text: "Policy Schedule?",
-    subtitle: "Current valid policy document",
+    text: "Policy Schedule",
   },
   {
     id: "fact_find",
-    text: "Fact Find (Needs/Obj/Affordability)?",
-    subtitle: "Documenting client situation and requirements",
+    text: "Process of seeking information from client / completed Fact Finding document.",
+    subtitle: "Needs / Objectives / Affordability / Astute",
   },
   {
     id: "risk_profile",
-    text: "Completed risk profile?",
-    subtitle: "Signed risk appetite questionnaire",
+    text: "Completed risk profile.",
   },
   {
     id: "fna",
-    text: "Financial Needs Analysis conducted?",
-    subtitle: "Analysis of financial gaps",
+    text: "Financial Needs Analysis conducted.",
   },
   {
     id: "quotes",
-    text: "Comparative quotes/schedule?",
-    subtitle: "Evidence of market analysis",
+    text: "Comparative quotes / schedule of quotes.",
   },
   {
     id: "limited_advice",
-    text: "Client warned (Limited Advice)?",
-    subtitle: "Warning letter where scope is restricted",
+    text: "Client warned where limited advice given.",
   },
   {
     id: "advice_record",
-    text: "Client Advice Record (ROA)?",
-    subtitle: "Detailed record of advice provided",
+    text: "Client Advice Record.",
+    subtitle: "Summary of info and material advice provided, products considered and recommended",
   },
   {
     id: "replacements",
-    text: "Replacement Consequences advised?",
-    subtitle: "Costs, penalties, and tax implications",
+    text: "Client fully advised of consequences of replacements.",
+    subtitle: "Cost, Financial Implications, Tax implications, product differences, penalties, restrictions",
   },
   {
     id: "suitability",
-    text: "Product sold aligns with needs?",
-    subtitle: "Suitability of the recommendation",
+    text: "Product sold aligns with identified needs",
   },
   {
     id: "deviations",
-    text: "Implications explained (Deviations)?",
-    subtitle: "Records of client not following advice",
+    text: "Implications explained to the client where client didn't follow advice",
   },
   {
     id: "storage",
-    text: "Docs stored and retrievable?",
-    subtitle: "Signed docs in central repository",
+    text: "Information, documents and advice records properly stored and retrievable.",
+    subtitle: "Signed quote and application form",
   },
   {
     id: "supervision",
-    text: "Supervision obligations met?",
-    subtitle: "Supervisor sign-off and contract check",
+    text: "Supervision obligations met",
+    subtitle: "If applicable",
+  },
+  {
+    id: "other_noncompliance",
+    text: "Other: is there evidence of any other non-compliance not mentioned above?",
   },
 ];
 

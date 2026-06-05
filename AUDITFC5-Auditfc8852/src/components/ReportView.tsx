@@ -334,7 +334,7 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
       <div className="flex flex-col gap-6 border-b border-gray-200 pb-8 print:hidden">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
-            <div 
+            <div
               className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase"
               style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
             >
@@ -345,6 +345,9 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
                 ITERATION {report.iteration}
               </div>
             )}
+            <div className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase bg-slate-100 text-slate-500 border border-slate-200">
+              CONFIDENTIAL — Internal Use Only
+            </div>
           </div>
           <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-900 leading-tight">
             Compliance Report
@@ -690,7 +693,7 @@ Fairbairn Consult Compliance Team${isFollowUp ? '\n\nCC: Zein - Compliance Overs
               <span style={{ fontWeight: 400, color: "#9ca3af", marginLeft: "8px" }}>· Old Mutual Wealth · Mandated Brokerage</span>
             </p>
             <p style={{ fontSize: "10px", color: "#9ca3af", marginTop: "3px" }}>
-              Confidential – Internal Compliance Audit Record · FC-AUDIT-{report.id.split('-').pop()?.toUpperCase()}
+              CONFIDENTIAL — Internal Use Only · FC-AUDIT-{report.id.split('-').pop()?.toUpperCase()}
             </p>
           </div>
           <div style={{ display: "flex", gap: "0", height: "3px", width: "60px", borderRadius: "99px", overflow: "hidden" }}>
