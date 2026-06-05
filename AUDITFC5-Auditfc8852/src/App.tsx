@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import ChecklistForm from "./components/ChecklistForm";
 import ReportView from "./components/ReportView";
 import AuditHistory from "./components/AuditHistory";
@@ -104,7 +104,31 @@ const App: React.FC = () => {
       setActiveCodeId(savedActiveCodeId);
       setView("history");
     }
+
+    // Mark hydration complete so debounced effects can start writing
+    isHydrated.current = true;
   }, []);
+
+  // Ref that prevents debounced effects from writing during initial load
+  const isHydrated = useRef(false);
+
+  // Debounced persist — audit_reports
+  useEffect(() => {
+    if (!isHydrated.current) return;
+    const t = setTimeout(() => {
+      localStorage.setItem("audit_reports", JSON.stringify(reports));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [reports]);
+
+  // Debounced persist — access_codes
+  useEffect(() => {
+    if (!isHydrated.current) return;
+    const t = setTimeout(() => {
+      localStorage.setItem("access_codes", JSON.stringify(accessCodes));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [accessCodes]);
 
   const handleAccessGranted = (codeId: string, roleType: UserRole) => {
     setRole(roleType);
@@ -118,11 +142,9 @@ const App: React.FC = () => {
     setActiveCodeId(codeId);
     localStorage.setItem("active_code_id", codeId);
 
-    const updatedCodes = accessCodes.map((c) =>
+    setAccessCodes(accessCodes.map((c) =>
       c.id === codeId ? { ...c, usageCount: (c.usageCount || 0) + 1 } : c
-    );
-    setAccessCodes(updatedCodes);
-    localStorage.setItem("access_codes", JSON.stringify(updatedCodes));
+    ));
 
     setView("history");
   };
@@ -201,19 +223,12 @@ const App: React.FC = () => {
   };
 
   const handleUpdateReport = (updatedReport: ComplianceReport) => {
-    const updatedReports = reports.map((r) =>
-      r.id === updatedReport.id ? updatedReport : r
-    );
-    setReports(updatedReports);
-    localStorage.setItem("audit_reports", JSON.stringify(updatedReports));
-    alert("Report updated successfully!");
+    setReports(reports.map((r) => r.id === updatedReport.id ? updatedReport : r));
   };
 
   const handleDeleteReport = (id: string) => {
     if (window.confirm("Are you sure you want to delete this report?")) {
-      const updated = reports.filter((r) => r.id !== id);
-      setReports(updated);
-      localStorage.setItem("audit_reports", JSON.stringify(updated));
+      setReports(reports.filter((r) => r.id !== id));
       if (currentReportId === id) setView("history");
     }
   };
@@ -277,10 +292,7 @@ const App: React.FC = () => {
         createdByCodeId: activeCodeId || "unknown",
       };
 
-      const updatedReports = [newReport].concat(reports);
-      setReports(updatedReports);
-      localStorage.setItem("audit_reports", JSON.stringify(updatedReports));
-
+      setReports([newReport].concat(reports));
       setCurrentReportId(newReport.id);
       setView("report");
     } catch (error) {
@@ -319,17 +331,13 @@ const App: React.FC = () => {
       usageCount: 0,
     };
 
-    const updated = [...accessCodes, newCode];
-    setAccessCodes(updated);
-    localStorage.setItem("access_codes", JSON.stringify(updated));
+    setAccessCodes([...accessCodes, newCode]);
   };
 
   const handleRevokeCode = (id: string) => {
-    const updated = accessCodes.map((c) =>
+    setAccessCodes(accessCodes.map((c) =>
       c.id === id ? { ...c, status: "REVOKED" as const } : c
-    );
-    setAccessCodes(updated);
-    localStorage.setItem("access_codes", JSON.stringify(updated));
+    ));
   };
 
   if (role === "NONE") {
