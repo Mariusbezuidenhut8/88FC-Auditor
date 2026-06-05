@@ -26,6 +26,12 @@ const ReportView: React.FC<ReportViewProps> = ({
   const [editDueDate, setEditDueDate] = useState('');
 
   useEffect(() => {
+    // Use the summary cached at submission time (fast path — no AI call needed)
+    if (report.aiSummary) {
+      setAiSummary(report.aiSummary);
+      return;
+    }
+    // Fallback: fetch on-demand for older reports that pre-date parallel generation
     const fetchSummary = async () => {
       setIsSummarizing(true);
       try {

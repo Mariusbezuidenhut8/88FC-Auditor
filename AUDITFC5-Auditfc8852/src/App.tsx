@@ -12,7 +12,7 @@ import {
   AccessCode,
   UserRole,
 } from "./types";
-import { generateRemedialActions } from "./azureOpenAIService";
+import { generateRemedialActions, generateReportSummary } from "./azureOpenAIService";
 import { CHECKLIST_ITEMS } from "./constants";
 import CARAnalyzer, { CaseContext } from "./components/CARAnalyzer";
 import RiskTrends from "./components/RiskTrends";
@@ -242,12 +242,16 @@ const App: React.FC = () => {
   }) => {
     setIsSubmitting(true);
     try {
-      const actions = await generateRemedialActions(data.metadata, data.findings);
+      // Run both AI calls in parallel — neither depends on the other's output
+      const [actions, aiSummary] = await Promise.all([
+        generateRemedialActions(data.metadata, data.findings),
+        generateReportSummary(data.metadata, data.findings).catch(() => ""),
+      ]);
 
       const remedialActions: RemedialAction[] = actions.map((action) => ({
         id: crypto.randomUUID(),
         description: action,
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        dueDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000)
           .toISOString()
           .split("T")[0],
         status: "PENDING",
@@ -265,6 +269,7 @@ const App: React.FC = () => {
         findings: data.findings,
         remedialActions,
         score,
+        aiSummary: aiSummary || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         iteration: editingData ? editingData.iteration + 1 : 1,

@@ -45,6 +45,7 @@ export interface ComplianceReport {
   createdByCodeId: string; // ADDED - your App.tsx uses this
   accepted?: boolean;
   acceptedAt?: string;
+  aiSummary?: string;
 }
 
 /**
