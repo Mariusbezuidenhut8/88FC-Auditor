@@ -20,6 +20,7 @@ interface CARAnalyzerProps {
   onGoToAudit?: () => void;
   activeCodeId: string;
   caseContext?: CaseContext;
+  isAdminView?: boolean;
 }
 
 interface CARMeta {
@@ -157,7 +158,7 @@ function extractJsonObject(text: string) {
 
 // ─────────────────────────────────────────────────────────────
 
-const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, onGoToAudit, activeCodeId, caseContext }: CARAnalyzerProps) => {
+const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, onGoToAudit, activeCodeId, caseContext, isAdminView = false }: CARAnalyzerProps) => {
   const [step, setStep] = useState<Step>("input");
   const [inputMethod, setInputMethod] = useState<"paste" | "upload">("paste");
 
@@ -205,7 +206,11 @@ const CARAnalyzer: React.FC<CARAnalyzerProps> = ({ onBack, onGoToAudit, activeCo
   useEffect(() => {
     try {
       const saved = localStorage.getItem("car_analyses");
-      if (saved) setHistory(JSON.parse(saved));
+      if (saved) {
+        const all: CARAnalysis[] = JSON.parse(saved);
+        // Users only see their own analyses; admin sees all
+        setHistory(isAdminView ? all : all.filter((a) => a.createdByCodeId === activeCodeId));
+      }
     } catch (e) {
       console.error("Error loading CAR history", e);
     }

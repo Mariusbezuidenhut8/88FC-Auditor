@@ -143,7 +143,9 @@ const App: React.FC = () => {
     localStorage.setItem("active_code_id", codeId);
 
     setAccessCodes(accessCodes.map((c) =>
-      c.id === codeId ? { ...c, usageCount: (c.usageCount || 0) + 1 } : c
+      c.id === codeId
+        ? { ...c, usageCount: (c.usageCount || 0) + 1, lastActiveAt: new Date().toISOString() }
+        : c
     ));
 
     setView("history");
@@ -349,6 +351,11 @@ const App: React.FC = () => {
     );
   }
 
+  // Regular users only see their own reports; admin sees everything
+  const visibleReports = role === "ADMIN"
+    ? reports
+    : reports.filter((r) => r.createdByCodeId === activeCodeId);
+
   const currentReport = currentReportId
     ? reports.find((r) => r.id === currentReportId) || null
     : null;
@@ -436,7 +443,7 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {view === "history" && (
           <AuditHistory
-            reports={reports}
+            reports={visibleReports}
             onView={(report) => handleViewReport(report)}
             onDelete={(id) => handleDeleteReport(id)}
             onNewReview={handleStartNewReview}
@@ -595,7 +602,7 @@ const App: React.FC = () => {
 
         {view === "risks" && (
           <RiskTrends
-            reports={reports}
+            reports={visibleReports}
             onStartAudit={() => { setEditingData(null); setCurrentReportId(null); setView("form"); }}
           />
         )}
@@ -606,6 +613,7 @@ const App: React.FC = () => {
             onGoToAudit={() => { setEditingData(null); setCurrentReportId(null); setView("form"); }}
             activeCodeId={activeCodeId || "unknown"}
             caseContext={selectedCaseMeta ?? undefined}
+            isAdminView={role === "ADMIN"}
           />
         )}
       </main>

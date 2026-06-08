@@ -1,5 +1,5 @@
-import React, { useState, useRef } from "react";
-import { AccessCode, ComplianceReport } from "../types";
+import React, { useState, useRef, useMemo } from "react";
+import { AccessCode, CARAnalysis, ComplianceReport } from "../types";
 
 interface AdminPortalProps {
   accessCodes: AccessCode[];
@@ -20,8 +20,31 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
 }) => {
   const [newCodeLabel, setNewCodeLabel] = useState("");
   const [isPermanent, setIsPermanent] = useState(false);
-  const [activeTab, setActiveTab] = useState<"codes" | "reports" | "data">("codes");
+  const [activeTab, setActiveTab] = useState<"codes" | "reports" | "data" | "usage">("codes");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const carAnalyses = useMemo<CARAnalysis[]>(() => {
+    try {
+      const saved = localStorage.getItem("car_analyses");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  }, []);
+
+  const usageStats = useMemo(() =>
+    accessCodes.map((code) => ({
+      ...code,
+      reportCount: reports.filter((r) => r.createdByCodeId === code.id).length,
+      carCount: carAnalyses.filter((c) => c.createdByCodeId === code.id).length,
+    })).sort((a, b) => {
+      // Sort by last active (most recent first), then by usage count
+      if (a.lastActiveAt && b.lastActiveAt) {
+        return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
+      }
+      if (a.lastActiveAt) return -1;
+      if (b.lastActiveAt) return 1;
+      return (b.usageCount || 0) - (a.usageCount || 0);
+    }),
+  [accessCodes, reports, carAnalyses]);
 
   const handleExport = () => {
     const payload = {
@@ -132,6 +155,16 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
             }`}
           >
             Backup & Restore
+          </button>
+          <button
+            onClick={() => setActiveTab("usage")}
+            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+              activeTab === "usage"
+                ? "border-[#005f6b] text-[#005f6b]"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Usage Tracking
           </button>
         </div>
       </div>
@@ -318,6 +351,133 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
               Upload Backup File
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Usage Tracking Tab */}
+      {activeTab === "usage" && (
+        <div className="space-y-6">
+          {/* Summary cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Users</p>
+              <p className="text-3xl font-black text-slate-900">{accessCodes.filter(c => c.status === "ACTIVE").length}</p>
+              <p className="text-xs text-slate-400 mt-1">Active access codes</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Logins</p>
+              <p className="text-3xl font-black text-slate-900">{accessCodes.reduce((sum, c) => sum + (c.usageCount || 0), 0)}</p>
+              <p className="text-xs text-slate-400 mt-1">Across all codes</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Reports</p>
+              <p className="text-3xl font-black text-slate-900">{reports.length}</p>
+              <p className="text-xs text-slate-400 mt-1">{carAnalyses.length} CAR analyses</p>
+            </div>
+          </div>
+
+          {/* Per-user breakdown */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-5 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900">Per-User Activity</h2>
+              <p className="text-sm text-slate-500 mt-0.5">Usage data per access code, sorted by most recently active.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">User / Label</th>
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">Code</th>
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest text-center">Logins</th>
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest text-center">Audits</th>
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest text-center">CARs</th>
+                    <th className="px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">Last Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usageStats.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-5 py-12 text-center text-slate-400 italic">No access codes yet.</td>
+                    </tr>
+                  ) : (
+                    usageStats.map((stat) => {
+                      const isActive = stat.status === "ACTIVE";
+                      const hasActivity = stat.reportCount > 0 || stat.carCount > 0 || stat.usageCount > 0;
+                      return (
+                        <tr key={stat.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${isActive ? 'bg-[#005f6b]/10 text-[#005f6b]' : 'bg-slate-100 text-slate-400'}`}>
+                                {stat.label.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-800 text-sm">{stat.label}</p>
+                                <p className="text-[10px] text-slate-400">Created: {formatDate(stat.createdAt)}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <code className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">{stat.code}</code>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                              stat.status === "ACTIVE" ? "bg-emerald-100 text-emerald-700"
+                              : stat.status === "REVOKED" ? "bg-red-100 text-red-700"
+                              : "bg-slate-100 text-slate-500"
+                            }`}>
+                              {stat.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={`text-lg font-black ${stat.usageCount > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                              {stat.usageCount || 0}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={`text-lg font-black ${stat.reportCount > 0 ? 'text-[#005f6b]' : 'text-slate-300'}`}>
+                              {stat.reportCount}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={`text-lg font-black ${stat.carCount > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
+                              {stat.carCount}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4">
+                            {stat.lastActiveAt ? (
+                              <div>
+                                <p className="text-sm font-semibold text-slate-700">
+                                  {new Date(stat.lastActiveAt).toLocaleDateString()}
+                                </p>
+                                <p className="text-[10px] text-slate-400">
+                                  {new Date(stat.lastActiveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-300 italic">Never logged in</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Inactive users callout */}
+          {usageStats.filter(s => s.status === "ACTIVE" && !s.lastActiveAt).length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+              <p className="text-sm font-bold text-amber-800 mb-1">
+                {usageStats.filter(s => s.status === "ACTIVE" && !s.lastActiveAt).length} active code(s) have never been used
+              </p>
+              <p className="text-xs text-amber-600">
+                {usageStats.filter(s => s.status === "ACTIVE" && !s.lastActiveAt).map(s => s.label).join(", ")}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

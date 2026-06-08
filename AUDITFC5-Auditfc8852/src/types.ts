@@ -59,6 +59,7 @@ export interface AccessCode {
   createdAt: string;
   status: 'ACTIVE' | 'INACTIVE' | 'REVOKED'; // Added REVOKED status
   usageCount: number;
+  lastActiveAt?: string;
 }
 
 export interface CARIssue {
