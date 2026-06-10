@@ -1,5 +1,8 @@
 import type { Handler } from "@netlify/functions";
-import { getStore } from "@netlify/blobs";
+
+const SUPABASE_URL = "https://fqelmxzyyzuoilxgyqjf.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxZWxteHp5eXp1b2lseGd5cWpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNjY5NjIsImV4cCI6MjA5NjY0Mjk2Mn0.bES-bP-C28I_J2QqYj3J5vrkfSz2DNi7U3bms0pbtTo";
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -18,8 +21,30 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const store = getStore({ name: "access-codes", consistency: "strong" });
-    await store.set("codes", JSON.stringify(codes));
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        // Upsert: insert or update if key already exists
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({
+        key: "access_codes",
+        value: codes,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        statusCode: 500,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: `Supabase error: ${text}` }),
+      };
+    }
 
     return {
       statusCode: 200,
