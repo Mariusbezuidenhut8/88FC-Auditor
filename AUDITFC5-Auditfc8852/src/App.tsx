@@ -47,66 +47,93 @@ const App: React.FC = () => {
 
   useEffect(() => {
     (async () => {
+      // Check AI availability
       try {
         const r = await fetch("/.netlify/functions/ping-azure");
         setHasApiKey(r.ok);
       } catch {
         setHasApiKey(false);
       }
-    })();
 
-    try {
-      const savedReports = localStorage.getItem("audit_reports");
-      if (savedReports) setReports(JSON.parse(savedReports));
-    } catch (e) {
-      console.error("Error loading reports", e);
-      localStorage.removeItem("audit_reports");
-    }
-
-    try {
-      const savedCase = localStorage.getItem("active_case");
-      if (savedCase) setSelectedCaseMeta(JSON.parse(savedCase));
-    } catch (e) {
-      console.error("Error loading active case", e);
-      localStorage.removeItem("active_case");
-    }
-
-    try {
-      const savedCodes = localStorage.getItem("access_codes");
-      if (savedCodes) {
-        setAccessCodes(JSON.parse(savedCodes));
-      } else {
-        const initialCode: AccessCode = {
-          id: "seed-1",
-          code: "FC-WELCOME-2025",
-          expiryDate: "2030-12-31",
-          status: "ACTIVE",
-          createdAt: new Date().toISOString(),
-          label: "Initial Access Code",
-          usageCount: 0,
-        };
-        setAccessCodes([initialCode]);
-        localStorage.setItem("access_codes", JSON.stringify([initialCode]));
+      // Load reports from localStorage
+      try {
+        const savedReports = localStorage.getItem("audit_reports");
+        if (savedReports) setReports(JSON.parse(savedReports));
+      } catch (e) {
+        console.error("Error loading reports", e);
+        localStorage.removeItem("audit_reports");
       }
-    } catch (e) {
-      console.error("Error loading codes", e);
-      localStorage.removeItem("access_codes");
-    }
 
-    const isAdmin = sessionStorage.getItem("is_admin") === "true";
-    const savedActiveCodeId = localStorage.getItem("active_code_id");
+      // Load active case from localStorage
+      try {
+        const savedCase = localStorage.getItem("active_case");
+        if (savedCase) setSelectedCaseMeta(JSON.parse(savedCase));
+      } catch (e) {
+        console.error("Error loading active case", e);
+        localStorage.removeItem("active_case");
+      }
 
-    if (isAdmin) {
-      setRole("ADMIN");
-      setView("admin");
-    } else if (savedActiveCodeId) {
-      setRole("USER");
-      setActiveCodeId(savedActiveCodeId);
-      setView("history");
-    }
+      // Load access codes — Netlify Blobs is the shared source of truth across all devices
+      const seedCode: AccessCode = {
+        id: "seed-1",
+        code: "FC-WELCOME-2025",
+        expiryDate: "2030-12-31",
+        status: "ACTIVE",
+        createdAt: new Date().toISOString(),
+        label: "Initial Access Code",
+        usageCount: 0,
+      };
 
-    // Mark hydration complete so debounced effects can start writing
-    isHydrated.current = true;
+      let serverCodes: AccessCode[] | null = null;
+      try {
+        const res = await fetch("/.netlify/functions/get-codes");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) serverCodes = data;
+        }
+      } catch {
+        // Offline or function unavailable — fall through to localStorage
+      }
+
+      if (serverCodes) {
+        // Server has data — use it (all devices see the same codes)
+        setAccessCodes(serverCodes);
+        localStorage.setItem("access_codes", JSON.stringify(serverCodes));
+      } else {
+        // Server has no data yet — use localStorage and sync it to the server
+        try {
+          const saved = localStorage.getItem("access_codes");
+          const localCodes: AccessCode[] = saved ? JSON.parse(saved) : [seedCode];
+          if (!saved) localStorage.setItem("access_codes", JSON.stringify(localCodes));
+          setAccessCodes(localCodes);
+          fetch("/.netlify/functions/save-codes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(localCodes),
+          }).catch(console.error);
+        } catch (e) {
+          console.error("Error loading codes", e);
+          localStorage.removeItem("access_codes");
+          setAccessCodes([seedCode]);
+        }
+      }
+
+      // Restore session
+      const isAdmin = sessionStorage.getItem("is_admin") === "true";
+      const savedActiveCodeId = localStorage.getItem("active_code_id");
+
+      if (isAdmin) {
+        setRole("ADMIN");
+        setView("admin");
+      } else if (savedActiveCodeId) {
+        setRole("USER");
+        setActiveCodeId(savedActiveCodeId);
+        setView("history");
+      }
+
+      // Mark hydration complete so debounced effects can start writing
+      isHydrated.current = true;
+    })();
   }, []);
 
   // Ref that prevents debounced effects from writing during initial load
@@ -121,11 +148,16 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [reports]);
 
-  // Debounced persist — access_codes
+  // Debounced persist — access_codes (localStorage cache + Netlify Blobs for cross-device sharing)
   useEffect(() => {
     if (!isHydrated.current) return;
     const t = setTimeout(() => {
       localStorage.setItem("access_codes", JSON.stringify(accessCodes));
+      fetch("/.netlify/functions/save-codes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(accessCodes),
+      }).catch(console.error);
     }, 300);
     return () => clearTimeout(t);
   }, [accessCodes]);
